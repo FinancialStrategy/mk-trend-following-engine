@@ -32,6 +32,7 @@ jobs:
           python -m py_compile MK_Trend_Following_HTML_Report_v003.py
           python -m py_compile MK_Trend_Following_Risk_Analytics_v003.py
           python -m py_compile MK_Trend_Following_Risk_Analytics_v004.py
+          python -m py_compile MK_Trend_Following_Entry_Gate_v005.py
 
       - name: Golden Master validation
         run: python smoke_test.py
@@ -60,3 +61,6 @@ jobs:
 
       - name: Flat-line presentation validation v0.04
         run: python risk_flat_line_test_v004.py
+
+      - name: Entry gate governance validation v0.05
+        run: python entry_gate_test_v005.py
