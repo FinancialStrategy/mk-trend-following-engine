@@ -1,0 +1,24 @@
+[client]
+toolbarMode = "minimal"
+showErrorDetails = "type"
+
+[theme]
+base = "light"
+primaryColor = "#334155"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F8FAFC"
+textColor = "#111827"
+font = "sans-serif"
+baseFontSize = 15
+baseFontWeight = 300
+headingFont = "sans-serif"
+headingFontWeights = [400, 400, 400, 400, 400, 400]
+baseRadius = "small"
+buttonRadius = "small"
+
+[theme.sidebar]
+backgroundColor = "#F8FAFC"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#111827"
+font = "sans-serif"
+headingFont = "sans-serif"
