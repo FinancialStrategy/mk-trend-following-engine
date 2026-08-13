@@ -1,0 +1,24 @@
+MK Trend Following Analytics Engine v0.04
+FLAT-LINE PRESENTATION FIX VALIDATION
+By Murat Konuklar
+============================================================
+Python compile: PASS
+Golden Master legacy engine: PASS
+Underlying risk dynamics check: PASS
+Cash-regime display masking: PASS
+Synthetic market data: NO
+Fallback source: NO
+
+PASS — Golden Master replication
+Observations: 1,043
+Final Strategy: 1,449,095.223507
+Final Buy & Hold: 747,161.572052
+No live market data was requested by this test.
+
+PASS — v0.04 flat-line presentation fix
+Window: 3M / 13 observations
+Underlying rolling-return unique values: 1,025
+Underlying rolling-vol unique values: 1,029
+Impossible underlying flatness: False
+Cash-only display masking test: PASS
+No price fill, synthetic market data, or fallback source used.

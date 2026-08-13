@@ -33,10 +33,18 @@ from MK_Trend_Following_Risk_Analytics_v004 import (
     validate_underlying_risk_dynamics,
     cash_regimes,
 )
+from MK_Trend_Following_Entry_Gate_v005 import (
+    horizon_options,
+    resolve_entry_lookback,
+    effective_gate_state,
+    portfolio_cash_regimes,
+    longest_cash_regime,
+    latest_execution_events,
+)
 from MK_Trend_Following_HTML_Report_v003 import build_html
 
 
-APP_VERSION = "v0.04"
+APP_VERSION = "v0.05"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -173,12 +181,71 @@ def make_price_chart(df, cfg, chart_mode="Candlestick"):
     return fig
 
 
-def make_equity_chart(df):
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["Portfolio"], mode="lines", name="Trend Strategy", line=dict(width=1.8, color="#0F172A")))
-    fig.add_trace(go.Scatter(x=df.index, y=df["BuyHold"], mode="lines", name="Buy & Hold", line=dict(width=1.4, color="#64748B", dash="dot")))
-    _base_layout(fig, "Strategy Equity Curve vs Buy & Hold", 560, "Portfolio Value")
-    fig.update_layout(xaxis=dict(rangeselector=RANGE_SELECTOR, rangeslider=dict(visible=False)))
+def make_equity_chart(df, entry_label=""):
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        row_heights=[0.82, 0.18], vertical_spacing=0.045,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df.index, y=df["Portfolio"], mode="lines", name="Trend Strategy",
+            line=dict(width=1.8, color="#0F172A"),
+            hovertemplate="%{x}<br>Strategy Portfolio: %{y:,.2f}<extra></extra>",
+        ),
+        row=1, col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df.index, y=df["BuyHold"], mode="lines", name="Buy & Hold",
+            line=dict(width=1.4, color="#64748B", dash="dot"),
+            hovertemplate="%{x}<br>Buy & Hold: %{y:,.2f}<extra></extra>",
+        ),
+        row=1, col=1,
+    )
+
+    exposure = pd.to_numeric(df["Shares"], errors="coerce").fillna(0.0).gt(0).astype(float)
+    fig.add_trace(
+        go.Scatter(
+            x=df.index, y=exposure, mode="lines", name="Market Exposure",
+            line=dict(width=1.2, color="#64748B"),
+            fill="tozeroy", fillcolor="rgba(100,116,139,0.10)",
+            hovertemplate="%{x}<br>Exposure: %{y:.0%}<extra></extra>",
+        ),
+        row=2, col=1,
+    )
+
+    # Explicitly shade full cash regimes so a flat strategy curve cannot
+    # be mistaken for missing underlying market data.
+    for reg in portfolio_cash_regimes(df):
+        fig.add_vrect(
+            x0=reg["Start"], x1=reg["End"],
+            fillcolor="rgba(148,163,184,0.10)",
+            line_width=0, layer="below",
+            row="all", col=1,
+        )
+
+    title = "Strategy Equity Curve vs Buy & Hold"
+    if entry_label:
+        title += f" — {entry_label}"
+
+    fig.update_layout(
+        title=dict(text=title, x=0.01, xanchor="left", font=dict(size=15, color="#0F172A")),
+        template="plotly_white",
+        height=660,
+        margin=dict(l=52, r=24, t=92, b=38),
+        font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif", size=11, color="#334155"),
+        hovermode="x unified",
+        legend=dict(orientation="h", y=1.03, x=1, xanchor="right", yanchor="bottom"),
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
+    )
+    fig.update_yaxes(title_text="Portfolio Value", gridcolor="#E2E8F0", row=1, col=1)
+    fig.update_yaxes(title_text="Exposure", tickformat=".0%", range=[0,1.02], gridcolor="#E2E8F0", row=2, col=1)
+    fig.update_xaxes(showgrid=False)
+    fig.update_xaxes(
+        rangeselector=RANGE_SELECTOR, rangeslider=dict(visible=False),
+        row=1, col=1,
+    )
     return fig
 
 
@@ -391,9 +458,47 @@ with st.sidebar:
     atr_multiplier = st.number_input("ATR Multiplier", min_value=0.1, value=10.0, step=0.5)
     bollinger_weeks = st.number_input("Bollinger Window", min_value=2, value=40, step=1)
     bollinger_sd = st.number_input("Bollinger Std Dev", min_value=0.1, value=2.5, step=0.1)
-    max_buy_weeks = st.number_input("Max-Price BUY Window", min_value=2, value=2000, step=10)
+    st.markdown("##### Entry Gate Governance")
+    entry_mode_label = st.selectbox(
+        "Entry Breakout Mode",
+        ["Frequency-Aware", "Legacy Exact", "Custom"],
+        index=0,
+        help=(
+            "Frequency-Aware maps a calendar horizon to the selected data frequency. "
+            "Legacy Exact preserves the original 2000-observation breakout gate."
+        ),
+    )
+
+    entry_horizon = "12M"
+    custom_entry_observations = 252
+    if entry_mode_label == "Frequency-Aware":
+        entry_horizon = st.selectbox(
+            "Entry Breakout Horizon",
+            horizon_options(interval),
+            index=horizon_options(interval).index("12M"),
+            help="BUY requires the prior adjusted close to reach the rolling maximum over this horizon.",
+        )
+        max_buy_weeks, entry_gate_label = resolve_entry_lookback(
+            interval, "Frequency-Aware", horizon=entry_horizon
+        )
+        st.caption(f"Effective entry lookback: **{max_buy_weeks} observations**.")
+    elif entry_mode_label == "Legacy Exact":
+        max_buy_weeks, entry_gate_label = resolve_entry_lookback(interval, "Legacy Exact")
+        st.warning(
+            "Legacy Exact uses 2000 observations. For recently listed stocks such as ASTOR, "
+            "this can become an effective all-history-high entry gate and can keep the strategy in cash for long periods."
+        )
+    else:
+        custom_entry_observations = st.number_input(
+            "Custom Entry Lookback (observations)",
+            min_value=2, value=252, step=1,
+        )
+        max_buy_weeks, entry_gate_label = resolve_entry_lookback(
+            interval, "Custom", custom_observations=int(custom_entry_observations)
+        )
+
     legacy_fidelity = st.toggle(
-        "Legacy Fidelity",
+        "Legacy OFFSET Fidelity",
         value=True,
         help="Preserves the original workbook's inclusive Excel OFFSET window semantics exactly.",
     )
@@ -453,6 +558,9 @@ if run_clicked:
         st.session_state.group = selected_group
         st.session_state.interval = interval
         st.session_state.interval_label = interval_label
+        st.session_state.entry_mode = entry_mode_label
+        st.session_state.entry_gate_label = entry_gate_label
+        st.session_state.entry_lookback = int(max_buy_weeks)
     except (DataIntegrityError, MarketDataError) as exc:
         st.error(f"STRICT DATA STOP — {exc}")
         st.stop()
@@ -463,6 +571,9 @@ if run_clicked:
 result = st.session_state.result
 summary = st.session_state.summary
 cfg = st.session_state.config
+entry_gate_label_used = st.session_state.get("entry_gate_label", "")
+entry_lookback_used = int(st.session_state.get("entry_lookback", cfg.max_buy_weeks))
+entry_mode_used = st.session_state.get("entry_mode", "Legacy Exact")
 decision = st.session_state.decision
 trades = st.session_state.trades
 tstats = st.session_state.trade_stats
@@ -574,7 +685,7 @@ with tabs[1]:
     st.plotly_chart(make_price_chart(result, cfg, chart_mode), use_container_width=True, config=PLOT_CFG)
 
 with tabs[2]:
-    st.plotly_chart(make_equity_chart(result), use_container_width=True, config=PLOT_CFG)
+    st.plotly_chart(make_equity_chart(result, entry_gate_label_used), use_container_width=True, config=PLOT_CFG)
     e1,e2,e3,e4 = st.columns(4)
     total_strategy = summary["portfolio_final"] / cfg.initial_capital - 1.0
     total_bh = summary["buyhold_final"] / cfg.initial_capital - 1.0
@@ -582,6 +693,46 @@ with tabs[2]:
     e2.metric("Total Buy & Hold Return", fmt_pct(total_bh))
     e3.metric("Cumulative Excess", fmt_pct(total_strategy-total_bh))
     e4.metric("CAGR Spread", fmt_pct(summary["strategy_cagr"]-summary["buyhold_cagr"]))
+
+    gate_state = effective_gate_state(result, entry_lookback_used)
+    events = latest_execution_events(result)
+    longest_cash = longest_cash_regime(result)
+
+    st.markdown("#### Entry Gate & Cash-Regime Diagnostics")
+    g1,g2,g3,g4,g5 = st.columns(5)
+    g1.metric("Entry Lookback", f"{entry_lookback_used:,} obs")
+    g2.metric("Effective Gate", "ALL-HISTORY HIGH" if gate_state["effective_all_history"] else "ROLLING HIGH")
+    g3.metric("Latest Entry Threshold", fmt_num(gate_state["latest_entry_gate"]))
+    g4.metric("Gap to Entry Gate", fmt_pct(gate_state["gap_to_entry_gate"]))
+    g5.metric("Last Executed BUY", events["last_buy"].date().isoformat() if events["last_buy"] is not None else "—")
+
+    if gate_state["effective_all_history"]:
+        st.warning(
+            f"ENTRY GATE DIAGNOSTIC — The selected lookback ({entry_lookback_used:,}) is at least as long as the "
+            f"available dataset ({gate_state['observations']:,} observations). The BUY gate therefore behaves like an "
+            "all-history-high breakout rule. A strategy that has sold can remain in CASH until the stock reaches a new historical high."
+        )
+
+    if longest_cash is not None:
+        st.markdown(
+            f"<div class='section-note'><b>Longest cash regime:</b> "
+            f"{longest_cash['Start'].date()} → {longest_cash['End'].date()} "
+            f"({longest_cash['Observations']:,} observations / {longest_cash['Calendar Days']:,} calendar days). "
+            f"During that interval the strategy portfolio is flat by construction because Shares = 0 and Cash is unchanged, "
+            f"while the underlying stock itself returned {longest_cash['Underlying Return During Cash']:.2%}.</div>",
+            unsafe_allow_html=True,
+        )
+
+    with st.expander("Cash Regime Ledger", expanded=False):
+        cash_df = pd.DataFrame(portfolio_cash_regimes(result))
+        if cash_df.empty:
+            st.write("No cash regimes in the selected history.")
+        else:
+            cash_df = cash_df.sort_values("Start", ascending=False)
+            cash_df["Underlying Return During Cash"] = cash_df["Underlying Return During Cash"].map(
+                lambda x: f"{x:.2%}" if pd.notna(x) else ""
+            )
+            st.dataframe(cash_df, use_container_width=True, hide_index=True)
 
 with tabs[3]:
     st.markdown(
@@ -720,6 +871,14 @@ with tabs[7]:
 
 with tabs[8]:
     st.markdown(f"""
+### Entry-gate governance
+The engine field historically named `max_buy_weeks` is actually an **observation-count lookback**.  
+- **Frequency-Aware (default):** 12M maps to 252 daily, 52 weekly, or 12 monthly observations.
+- **Legacy Exact:** preserves the original 2000-observation rule.
+- **Custom:** directly specifies the observation count.
+
+For a recently listed stock, a 2000-observation lookback can exceed the entire available history. In that case the entry gate becomes an effective **all-history-high breakout** and long cash plateaus are expected after an exit.
+
 ### Decision hierarchy
 **1. Entry gate:** the prior completed adjusted close is compared with the prior rolling maximum.  
 **2. Exit gate:** the prior completed adjusted close is compared with the active strategy threshold.  
