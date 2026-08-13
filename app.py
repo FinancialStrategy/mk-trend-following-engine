@@ -44,7 +44,7 @@ from MK_Trend_Following_Entry_Gate_v005 import (
 from MK_Trend_Following_HTML_Report_v003 import build_html
 
 
-APP_VERSION = "v0.05"
+APP_VERSION = "v0.05.1"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -507,6 +507,19 @@ with st.sidebar:
 
 
 # ---------------------------- State ----------------------------
+STATE_SCHEMA_VERSION = 2
+_previous_schema = st.session_state.get("_state_schema_version")
+if _previous_schema != STATE_SCHEMA_VERSION:
+    # Clear only computed analysis objects from an older deployed code schema.
+    # This prevents stale dataclass/session objects from surviving a hot redeploy.
+    for _k in [
+        "result", "summary", "config", "raw", "decision", "trades", "trade_stats",
+        "ticker", "instrument_name", "market", "group", "interval", "interval_label",
+        "entry_mode", "entry_gate_label", "entry_lookback",
+    ]:
+        st.session_state.pop(_k, None)
+    st.session_state["_state_schema_version"] = STATE_SCHEMA_VERSION
+
 for key, default in {
     "result": None, "summary": None, "config": None, "raw": None,
     "decision": None, "trades": None, "trade_stats": None,
@@ -568,16 +581,10 @@ if run_clicked:
         st.error(f"RUN STOPPED — {type(exc).__name__}: {exc}")
         st.stop()
 
-result = st.session_state.result
-summary = st.session_state.summary
-cfg = st.session_state.config
-entry_gate_label_used = st.session_state.get("entry_gate_label", "")
-entry_lookback_used = int(st.session_state.get("entry_lookback", cfg.max_buy_weeks))
-entry_mode_used = st.session_state.get("entry_mode", "Legacy Exact")
-decision = st.session_state.decision
-trades = st.session_state.trades
-tstats = st.session_state.trade_stats
+result = st.session_state.get("result")
 
+# Cold-start and redeploy guard:
+# Never dereference config/decision/trade objects before a completed run exists.
 if result is None:
     st.info("Choose an instrument from BIST, US Stocks, Precious Metals, or enter a manual Yahoo ticker; then press RUN ANALYSIS.")
     u = pd.DataFrame(flat_universe_rows())
@@ -585,6 +592,21 @@ if result is None:
     st.dataframe(u, use_container_width=True, hide_index=True, height=460)
     st.caption("The universe is a convenience selector only. Live price history is requested from Yahoo Finance after RUN ANALYSIS; the list itself is not a fallback data source.")
     st.stop()
+
+summary = st.session_state.get("summary")
+cfg = st.session_state.get("config")
+decision = st.session_state.get("decision")
+trades = st.session_state.get("trades")
+tstats = st.session_state.get("trade_stats")
+
+entry_gate_label_used = st.session_state.get("entry_gate_label", "")
+entry_lookback_state = st.session_state.get("entry_lookback")
+if entry_lookback_state is not None:
+    entry_lookback_used = int(entry_lookback_state)
+else:
+    # Safe compatibility fallback only after a completed result exists.
+    entry_lookback_used = int(getattr(cfg, "max_buy_weeks", 2000))
+entry_mode_used = st.session_state.get("entry_mode", "Legacy Exact")
 
 # Persisted run identity
 ticker_used = st.session_state.ticker
