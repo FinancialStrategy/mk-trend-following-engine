@@ -64,3 +64,23 @@ jobs:
 
       - name: Entry gate governance validation v0.05
         run: python entry_gate_test_v005.py
+
+      - name: Cold-start state regression validation v0.05.1
+        run: python cold_start_regression_test_v0051.py
+
+      - name: Streamlit headless cold-start smoke test
+        shell: bash
+        run: |
+          set -e
+          streamlit run app.py --server.headless true --server.port 8501 > /tmp/streamlit.log 2>&1 &
+          PID=$!
+          trap 'kill $PID || true' EXIT
+          for i in {1..30}; do
+            if curl -fsS http://localhost:8501/_stcore/health >/dev/null; then
+              echo "PASS — Streamlit health endpoint is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/streamlit.log
+          exit 1
