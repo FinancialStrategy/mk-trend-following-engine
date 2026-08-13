@@ -1,0 +1,13 @@
+MK Trend Following Analytics Engine — Streamlit Cloud v0.01
+By Murat Konuklar
+============================================================
+Python static compile: PASS
+Streamlit config TOML parse: PASS
+Offline Golden Master smoke test: PASS
+Live Yahoo call during validation: NO
+
+PASS — Golden Master replication
+Observations: 1,043
+Final Strategy: 1,449,095.223507
+Final Buy & Hold: 747,161.572052
+No live market data was requested by this test.
