@@ -26,10 +26,17 @@ from MK_Trend_Following_Universe_v002 import (
     instruments_for,
     flat_universe_rows,
 )
-from MK_Trend_Following_HTML_Report_v002 import build_html
+from MK_Trend_Following_Risk_Analytics_v004 import (
+    rolling_window_options,
+    rolling_risk_frame,
+    risk_state_snapshot,
+    validate_underlying_risk_dynamics,
+    cash_regimes,
+)
+from MK_Trend_Following_HTML_Report_v003 import build_html
 
 
-APP_VERSION = "v0.02"
+APP_VERSION = "v0.04"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -199,21 +206,134 @@ def make_trend_diagnostics(df):
     return fig
 
 
-def make_rolling_risk_chart(df):
-    gaps = pd.Series(df.index).diff().dt.days.dropna()
-    med = float(gaps.median()) if len(gaps) else 1
-    ppy = 252 if med <= 3 else 52 if med <= 10 else 12
-    win = 63 if ppy == 252 else 13 if ppy == 52 else 6
-    r = df["Portfolio"].pct_change()
-    rolling_vol = r.rolling(win).std(ddof=1) * np.sqrt(ppy)
-    rolling_ret = df["Portfolio"].pct_change(win)
+def make_underlying_rolling_risk_chart(df, rolling, spec, instrument_label):
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(go.Scatter(x=df.index, y=rolling_ret, mode="lines", name=f"{win}-Period Return", line=dict(width=1.3, color="#0F172A")), secondary_y=False)
-    fig.add_trace(go.Scatter(x=df.index, y=rolling_vol, mode="lines", name=f"{win}-Period Ann. Volatility", line=dict(width=1.2, color="#B45309")), secondary_y=True)
-    _base_layout(fig, "Rolling Return and Volatility", 500)
-    fig.update_yaxes(title_text="Rolling Return", tickformat=".0%", secondary_y=False)
-    fig.update_yaxes(title_text="Annualized Volatility", tickformat=".0%", secondary_y=True)
+    fig.add_trace(
+        go.Scatter(
+            x=df.index, y=rolling["AssetRollingReturn"], mode="lines",
+            name=f"{spec.label} Asset Return",
+            line=dict(width=1.5, color="#0F172A"),
+            hovertemplate="%{x}<br>Rolling Return: %{y:.2%}<extra></extra>",
+        ),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df.index, y=rolling["AssetAnnualizedVolatility"], mode="lines",
+            name=f"{spec.label} Ann. Asset Volatility",
+            line=dict(width=1.4, color="#B45309"),
+            hovertemplate="%{x}<br>Ann. Volatility: %{y:.2%}<extra></extra>",
+        ),
+        secondary_y=True,
+    )
+    _base_layout(
+        fig,
+        f"{instrument_label} — Underlying Asset Rolling Return & Volatility",
+        520,
+    )
+    fig.update_yaxes(title_text="Underlying Rolling Return", tickformat=".0%", secondary_y=False)
+    fig.update_yaxes(title_text="Underlying Annualized Volatility", tickformat=".0%", secondary_y=True)
     fig.update_layout(xaxis=dict(rangeselector=RANGE_SELECTOR, rangeslider=dict(visible=False)))
+    return fig
+
+
+def make_strategy_rolling_risk_chart(df, rolling, spec):
+    # Two-row institutional view:
+    # top = strategy risk only while it has market exposure,
+    # bottom = rolling exposure. Pure-cash windows are shaded.
+    fig = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.08,
+        row_heights=[0.72, 0.28],
+        specs=[[{"secondary_y": True}], [{"secondary_y": False}]],
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=rolling["StrategyRollingReturnDisplay"],
+            mode="lines",
+            name=f"{spec.label} Strategy Return",
+            line=dict(width=1.5, color="#334155"),
+            connectgaps=False,
+            hovertemplate="%{x}<br>Strategy Rolling Return: %{y:.2%}<extra></extra>",
+        ),
+        row=1, col=1, secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=rolling["StrategyAnnualizedVolatilityDisplay"],
+            mode="lines",
+            name=f"{spec.label} Ann. Strategy Volatility",
+            line=dict(width=1.4, color="#7C3AED"),
+            connectgaps=False,
+            hovertemplate="%{x}<br>Strategy Ann. Volatility: %{y:.2%}<extra></extra>",
+        ),
+        row=1, col=1, secondary_y=True,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=rolling["RollingExposure"],
+            mode="lines",
+            name=f"{spec.label} Rolling Market Exposure",
+            line=dict(width=1.35, color="#64748B"),
+            fill="tozeroy",
+            fillcolor="rgba(100,116,139,0.10)",
+            connectgaps=False,
+            hovertemplate="%{x}<br>Rolling Exposure: %{y:.1%}<extra></extra>",
+        ),
+        row=2, col=1,
+    )
+
+    # Mark pure-cash windows explicitly instead of drawing a misleading
+    # horizontal 0% strategy-risk line.
+    for x0, x1 in cash_regimes(rolling):
+        fig.add_vrect(
+            x0=x0, x1=x1,
+            fillcolor="rgba(148,163,184,0.12)",
+            line_width=0,
+            layer="below",
+            row="all", col=1,
+        )
+
+    fig.update_layout(
+        title=dict(
+            text="Trend Strategy Rolling Risk & Market Exposure",
+            x=0.01, xanchor="left",
+            font=dict(size=16, family="Arial, sans-serif", color="#111827"),
+        ),
+        height=650,
+        template="plotly_white",
+        hovermode="x unified",
+        margin=dict(l=45, r=45, t=60, b=30),
+        legend=dict(orientation="h", y=1.04, x=0),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+    )
+    fig.update_yaxes(
+        title_text="Strategy Rolling Return",
+        tickformat=".0%",
+        row=1, col=1, secondary_y=False
+    )
+    fig.update_yaxes(
+        title_text="Strategy Ann. Volatility",
+        tickformat=".0%",
+        row=1, col=1, secondary_y=True
+    )
+    fig.update_yaxes(
+        title_text="Market Exposure",
+        tickformat=".0%",
+        range=[0, 1.02],
+        row=2, col=1
+    )
+    fig.update_xaxes(
+        rangeselector=RANGE_SELECTOR,
+        rangeslider=dict(visible=False),
+        row=1, col=1,
+    )
     return fig
 
 
@@ -464,8 +584,83 @@ with tabs[2]:
     e4.metric("CAGR Spread", fmt_pct(summary["strategy_cagr"]-summary["buyhold_cagr"]))
 
 with tabs[3]:
+    st.markdown(
+        "<div class='section-note'><b>Risk-source separation:</b> Underlying Asset risk is calculated from the instrument's "
+        "adjusted-close series. Strategy risk is calculated separately from the portfolio equity curve. "
+        "Cash periods can legitimately flatten Strategy return/volatility, but they must never flatten the underlying instrument's risk chart.</div>",
+        unsafe_allow_html=True,
+    )
+
+    window_specs = rolling_window_options(result.index)
+    default_idx = next((i for i, x in enumerate(window_specs) if x.label == "3M"), 0)
+    selected_spec = st.selectbox(
+        "Rolling Risk Window",
+        window_specs,
+        index=default_idx,
+        format_func=lambda x: f"{x.label}  |  {x.observations} {x.frequency_label.lower()} observations",
+    )
+    rolling, used_spec = rolling_risk_frame(result, selected_spec.observations)
+    risk_state = risk_state_snapshot(result, rolling, used_spec)
+    risk_integrity = validate_underlying_risk_dynamics(result, rolling)
+
+    if risk_integrity["impossible_flatness"]:
+        st.error(
+            "RISK INTEGRITY STOP — The underlying adjusted-close series moves, but both "
+            "underlying rolling return and rolling volatility are effectively constant. "
+            "This is not accepted as a valid chart state. Review the deployed files / data pipeline."
+        )
+        st.stop()
+
     st.plotly_chart(make_drawdown_chart(result), use_container_width=True, config=PLOT_CFG)
-    st.plotly_chart(make_rolling_risk_chart(result), use_container_width=True, config=PLOT_CFG)
+
+    st.markdown("#### Underlying Asset Risk — Market Data")
+    st.plotly_chart(
+        make_underlying_rolling_risk_chart(result, rolling, used_spec, f"{name_used} ({ticker_used})"),
+        use_container_width=True,
+        config=PLOT_CFG,
+    )
+    a1,a2,a3,a4 = st.columns(4)
+    a1.metric(f"{used_spec.label} Asset Rolling Return", fmt_pct(risk_state["asset_rolling_return"]))
+    a2.metric(f"{used_spec.label} Asset Ann. Volatility", fmt_pct(risk_state["asset_annualized_volatility"]))
+    a3.metric("Underlying Source", "Adjusted Close")
+    a4.metric("Risk-Series Unique Points", f"{risk_integrity['rolling_return_unique']:,}")
+
+    with st.expander("Underlying Risk Integrity Diagnostics", expanded=False):
+        st.dataframe(
+            pd.DataFrame([{
+                "Adjusted Close Unique Prices": risk_integrity["price_unique"],
+                "Adjusted Close Range": risk_integrity["price_range"],
+                "Rolling Return Unique Values": risk_integrity["rolling_return_unique"],
+                "Rolling Return Range": risk_integrity["rolling_return_range"],
+                "Rolling Vol Unique Values": risk_integrity["rolling_vol_unique"],
+                "Rolling Vol Range": risk_integrity["rolling_vol_range"],
+                "Impossible Flatness": risk_integrity["impossible_flatness"],
+            }]),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    st.markdown("#### Strategy Risk — Portfolio Exposure")
+    st.plotly_chart(
+        make_strategy_rolling_risk_chart(result, rolling, used_spec),
+        use_container_width=True,
+        config=PLOT_CFG,
+    )
+    s1,s2,s3,s4,s5 = st.columns(5)
+    s1.metric(f"{used_spec.label} Strategy Rolling Return", fmt_pct(risk_state["strategy_rolling_return"]))
+    s2.metric(f"{used_spec.label} Strategy Ann. Volatility", fmt_pct(risk_state["strategy_annualized_volatility"]))
+    s3.metric(f"{used_spec.label} Rolling Exposure", fmt_pct(risk_state["rolling_exposure"]))
+    s4.metric("Current Position", risk_state["current_position"])
+    s5.metric("Full-History Cash Exposure", fmt_pct(risk_state["cash_exposure_ratio"]))
+
+    if risk_state["strategy_flat_reason"]:
+        st.info(risk_state["strategy_flat_reason"])
+    else:
+        st.caption(
+            "If the strategy graph contains flat segments, inspect Current Position and cash exposure. "
+            "Flat strategy volatility during a cash regime is mathematically valid and is not interpreted as zero volatility for the underlying stock."
+        )
+
     r1,r2,r3,r4 = st.columns(4)
     r1.metric("Strategy Max DD", fmt_pct(summary["max_drawdown"]))
     r2.metric("Buy & Hold Max DD", fmt_pct(summary["buyhold_max_drawdown"]))
@@ -564,7 +759,7 @@ html_doc = build_html(
 st.download_button(
     "Export Standalone Interactive HTML",
     data=html_doc.encode("utf-8"),
-    file_name=f"MK_Trend_Following_{ticker_used}_{interval_used}_v002.html",
+    file_name=f"MK_Trend_Following_{ticker_used}_{interval_used}_v004.html",
     mime="text/html",
     use_container_width=True,
 )

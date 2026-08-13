@@ -1,0 +1,21 @@
+MK Trend Following Analytics Engine v0.03 — ASTOR Rolling Risk Fix
+By Murat Konuklar
+===============================================================
+Python compile: PASS
+Golden Master: PASS
+Risk source-separation test: PASS
+Synthetic data: NO
+Fallback data: NO
+
+PASS — Golden Master replication
+Observations: 1,043
+Final Strategy: 1,449,095.223507
+Final Buy & Hold: 747,161.572052
+No live market data was requested by this test.
+
+PASS — Rolling Risk source separation
+Window: 3M / 13 observations
+Underlying rolling-return nonzero max abs: 0.51166029
+Underlying rolling-vol max: 0.75427455
+Strategy rolling observations: 1,030
+Cash exposure ratio: 38.7344%

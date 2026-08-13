@@ -1,0 +1,11 @@
+{
+  "project": "MK Trend Following Analytics Engine",
+  "version": "v0.03",
+  "author": "Murat Konuklar",
+  "fix": "Separate underlying-asset rolling risk from strategy-portfolio rolling risk",
+  "validated_legacy_engine": "MK_Trend_Following_Engine_v001.py",
+  "data_source": "Yahoo Finance via yfinance only",
+  "synthetic_data": false,
+  "fallback_market_data": false,
+  "price_fill": false
+}
