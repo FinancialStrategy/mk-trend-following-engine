@@ -1,0 +1,16 @@
+{
+  "project": "MK Trend Following Analytics Engine",
+  "version": "v0.02-streamlit-cloud",
+  "author": "Murat Konuklar",
+  "entrypoint": "app.py",
+  "recommended_python": "3.12",
+  "live_market_data_source": "Yahoo Finance via yfinance only",
+  "synthetic_data": false,
+  "fallback_market_data": false,
+  "price_fill": false,
+  "secrets_required": false,
+  "instrument_universe_count": 99,
+  "decision_states": ["BUY", "HOLD", "SELL", "WAIT / CASH"],
+  "legacy_core": "MK_Trend_Following_Engine_v001.py",
+  "golden_master_required": true
+}

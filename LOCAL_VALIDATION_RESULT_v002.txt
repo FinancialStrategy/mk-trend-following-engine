@@ -1,0 +1,15 @@
+MK Trend Following Analytics Engine — Streamlit Cloud v0.02
+By Murat Konuklar
+================================================================
+Python static compile: PASS
+Golden Master replication: PASS
+v0.02 decision/report integration: PASS
+Curated instrument universe: 99 instruments
+Live Yahoo call during offline validation: NO
+Synthetic data during validation: NO
+Fallback provider: NO
+
+Golden Master controls:
+Observations: 1,043
+Final Strategy: 1,449,095.223507
+Final Buy & Hold: 747,161.572052

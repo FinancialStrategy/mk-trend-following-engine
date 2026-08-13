@@ -1,0 +1,47 @@
+MK TREND FOLLOWING ANALYTICS ENGINE v0.01
+GOLDEN MASTER VALIDATION AUDIT
+By Murat Konuklar
+==============================================================================
+
+Golden dataset observations : 1,043
+Data start                  : 1988-12-16
+Data end                    : 2008-12-08
+Initial capital             : 100,000.00
+Final strategy portfolio    : 1,449,095.2235074965
+Final Buy & Hold            : 747,161.5720524017
+Strategy CAGR               : 14.31902035%
+Buy & Hold CAGR             : 10.59069933%
+Strategy max drawdown       : -31.90954774%
+Buy & Hold max drawdown     : -70.88607595%
+Annualized strategy vol.    : 18.74998447%
+
+FIELD-LEVEL REPLICATION
+           Field  Compared  MaxAbsError  Mismatches  Pass
+          Return      1043 4.263083e-16           0  True
+         VolumeK      1043 0.000000e+00           0  True
+         Counter      1042 0.000000e+00           0  True
+         HighLow      1042 7.105427e-15           0  True
+HighPrevCloseAbs      1042 7.160939e-15           0  True
+ LowPrevCloseAbs      1042 1.776357e-15           0  True
+       TrueRange      1042 7.105427e-15           0  True
+        ATR_Stop      1042 1.421085e-14           0  True
+        MaxPrice      1043 3.552714e-15           0  True
+           Scale      1043 1.110223e-16           0  True
+          Shares      1043 0.000000e+00           0  True
+            Cash      1043 2.328306e-10           0  True
+       Portfolio      1043 2.328306e-10           0  True
+         AdjOpen      1043 7.105427e-15           0  True
+         AdjHigh      1043 7.105427e-15           0  True
+          AdjLow      1043 7.105427e-15           0  True
+    AdjCloseCalc      1043 3.552714e-15           0  True
+         BuyHold      1043 2.561137e-09           0  True
+       BuyMarker      1043 1.455192e-11           0  True
+      SellMarker      1043 4.656613e-10           0  True
+        FirstBuy      1043 0.000000e+00           0  True
+       FirstSell      1043 0.000000e+00           0  True
+       StdDevPop      1042 6.527001e-13           0  True
+  LowerBollinger      1042 1.644906e-12           0  True
+ ATRTrailingStop      1042 3.552714e-15           0  True
+          Signal      1043          NaN           0  True
+
+OVERALL PASS: True
