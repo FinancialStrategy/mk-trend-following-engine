@@ -1,0 +1,25 @@
+MK TREND FOLLOWING ANALYTICS ENGINE v0.06
+NADARAYA-WATSON INTEGRATION VALIDATION
+By Murat Konuklar
+============================================================
+Legacy Golden Master: PASS
+Six NW kernels: PASS
+Causal prefix invariance: PASS
+Next-open execution accounting: PASS
+Residual band ordering: PASS
+Cold-start regression: PASS
+Synthetic market data: NO
+Fallback market data: NO
+Forward/back fill: NO
+
+Balanced research preset on original GE Golden Master (illustrative validation only; not parameter optimization or a guarantee):
+Observations: 1,043
+Final NW strategy value: 764,727.16
+Final Buy & Hold value: 747,161.57
+NW strategy CAGR: 10.7194%
+Buy & Hold CAGR: 10.5907%
+NW Max Drawdown: -24.3470%
+Buy & Hold Max Drawdown: -70.8861%
+Closed trades: 22
+Win rate: 54.5455%
+Current NW state: WAIT / CASH

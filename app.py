@@ -42,9 +42,20 @@ from MK_Trend_Following_Entry_Gate_v005 import (
     latest_execution_events,
 )
 from MK_Trend_Following_HTML_Report_v003 import build_html
+from MK_Nadaraya_Watson_Trend_v006 import (
+    NWConfig,
+    NWStrategyConfig,
+    KERNELS as NW_KERNELS,
+    compute_nadaraya_watson,
+    run_nw_strategy,
+    nw_decision_snapshot,
+    kernel_weight_profile,
+    strategy_mode_label,
+)
+from MK_Nadaraya_Watson_HTML_Report_v006 import build_nw_html_report
 
 
-APP_VERSION = "v0.05.1"
+APP_VERSION = "v0.06"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -404,6 +415,144 @@ def make_strategy_rolling_risk_chart(df, rolling, spec):
     return fig
 
 
+def make_nw_overlay_chart(df, nw_cfg):
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=df.index,
+        open=df["AdjOpen"], high=df["AdjHigh"], low=df["AdjLow"], close=df["AdjCloseCalc"],
+        name="Adjusted OHLC",
+        increasing_line_color="#334155", decreasing_line_color="#94A3B8",
+        increasing_fillcolor="#FFFFFF", decreasing_fillcolor="#E2E8F0",
+        whiskerwidth=0.25,
+    ))
+
+    bull = df["NWTrend"].where(df["NWDirection"] > 0)
+    bear = df["NWTrend"].where(df["NWDirection"] < 0)
+    flat = df["NWTrend"].where(df["NWDirection"] == 0)
+
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["NWLower"], mode="lines", name="NW Lower Residual Band",
+        line=dict(width=0.9, color="#94A3B8"), hovertemplate="%{x}<br>Lower: %{y:,.2f}<extra></extra>"
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["NWUpper"], mode="lines", name="NW Upper Residual Band",
+        line=dict(width=0.9, color="#94A3B8"), fill="tonexty", fillcolor="rgba(148,163,184,0.08)",
+        hovertemplate="%{x}<br>Upper: %{y:,.2f}<extra></extra>"
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index, y=bull, mode="lines", name="NW Bullish Path",
+        line=dict(width=2.1, color="#0F766E"), connectgaps=False,
+        hovertemplate="%{x}<br>NW Trend: %{y:,.2f}<extra></extra>"
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index, y=bear, mode="lines", name="NW Bearish Path",
+        line=dict(width=2.1, color="#B91C1C"), connectgaps=False,
+        hovertemplate="%{x}<br>NW Trend: %{y:,.2f}<extra></extra>"
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index, y=flat, mode="lines", name="NW Flat Path",
+        line=dict(width=1.4, color="#64748B"), connectgaps=False,
+    ))
+
+    bull_rev = df["NWBullishReversal"].fillna(False).astype(bool)
+    bear_rev = df["NWBearishReversal"].fillna(False).astype(bool)
+    fig.add_trace(go.Scatter(
+        x=df.index[bull_rev], y=df.loc[bull_rev, "NWTrend"], mode="markers", name="Bullish Kernel Reversal",
+        marker=dict(symbol="triangle-up", size=10, color="#0F766E", line=dict(width=0.5, color="#FFFFFF")),
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index[bear_rev], y=df.loc[bear_rev, "NWTrend"], mode="markers", name="Bearish Kernel Reversal",
+        marker=dict(symbol="triangle-down", size=10, color="#B91C1C", line=dict(width=0.5, color="#FFFFFF")),
+    ))
+
+    buys = df["FirstBuy"].fillna(0).gt(0)
+    sells = df["FirstSell"].fillna(0).gt(0)
+    fig.add_trace(go.Scatter(
+        x=df.index[buys], y=df.loc[buys, "AdjOpen"], mode="markers", name="NW Strategy BUY",
+        marker=dict(symbol="triangle-up", size=13, color="#111827"),
+        hovertemplate="%{x}<br>Executed BUY: %{y:,.2f}<extra></extra>"
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index[sells], y=df.loc[sells, "AdjOpen"], mode="markers", name="NW Strategy SELL",
+        marker=dict(symbol="triangle-down", size=13, color="#7C2D12"),
+        hovertemplate="%{x}<br>Executed SELL: %{y:,.2f}<extra></extra>"
+    ))
+
+    fig.update_layout(
+        title=dict(
+            text=f"Nadaraya-Watson Trend — {nw_cfg.kernel} Kernel | Lookback {nw_cfg.lookback} | h={nw_cfg.effective_bandwidth:g}",
+            x=0.01, xanchor="left", font=dict(size=15, color="#0F172A")
+        ),
+        template="plotly_white", height=690, hovermode="x unified",
+        margin=dict(l=45, r=25, t=85, b=35),
+        legend=dict(orientation="h", y=1.03, x=1, xanchor="right", yanchor="bottom"),
+        xaxis_rangeslider_visible=False,
+        paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
+        font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif", size=11, color="#334155"),
+    )
+    fig.update_xaxes(rangeselector=RANGE_SELECTOR, showgrid=False)
+    fig.update_yaxes(title_text="Adjusted Price / NW Estimate", gridcolor="#E2E8F0")
+    return fig
+
+
+def make_nw_equity_chart(df):
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.78, 0.22], vertical_spacing=0.06)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["Portfolio"], mode="lines", name="NW Trend Strategy",
+        line=dict(width=1.8, color="#0F172A")
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["BuyHold"], mode="lines", name="Buy & Hold",
+        line=dict(width=1.3, color="#64748B", dash="dot")
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["NWExposure"], mode="lines", name="NW Market Exposure",
+        line=dict(width=1.2, color="#475569"), fill="tozeroy", fillcolor="rgba(71,85,105,0.10)"
+    ), row=2, col=1)
+    fig.update_layout(
+        title=dict(text="MK Causal Nadaraya-Watson Strategy vs Buy & Hold", x=0.01, xanchor="left", font=dict(size=15)),
+        template="plotly_white", height=620, hovermode="x unified",
+        margin=dict(l=45, r=25, t=75, b=30),
+        legend=dict(orientation="h", y=1.03, x=1, xanchor="right"),
+        font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif", size=11),
+    )
+    fig.update_yaxes(title_text="Portfolio Value", gridcolor="#E2E8F0", row=1, col=1)
+    fig.update_yaxes(title_text="Exposure", tickformat=".0%", range=[0,1.02], row=2, col=1)
+    fig.update_xaxes(rangeselector=RANGE_SELECTOR, rangeslider=dict(visible=False), row=1, col=1)
+    return fig
+
+
+def make_nw_kernel_chart(nw_cfg):
+    profile = kernel_weight_profile(nw_cfg)
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=profile["Lag"], y=profile["NormalizedWeight"], name="Normalized Kernel Weight",
+        marker_color="#475569",
+        hovertemplate="Lag %{x}<br>Weight %{y:.5f}<extra></extra>",
+    ))
+    _base_layout(fig, f"Kernel Weight Profile — {nw_cfg.kernel}", 430, "Normalized Weight")
+    fig.update_xaxes(title_text="Lag (bars)")
+    return fig
+
+
+def make_nw_state_chart(df):
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    slope_pct = df["NWSlope"] / df["NWTrend"].shift(1)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=slope_pct, mode="lines", name="NW Normalized Slope",
+        line=dict(width=1.4, color="#0F172A")
+    ), secondary_y=False)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["NWBandWidthPct"], mode="lines", name="Residual Band Width / NW",
+        line=dict(width=1.2, color="#B45309")
+    ), secondary_y=True)
+    _base_layout(fig, "NW State Diagnostics — Slope and Residual Dispersion", 470)
+    fig.update_yaxes(title_text="NW Slope / Prior NW", tickformat=".2%", secondary_y=False)
+    fig.update_yaxes(title_text="Residual Envelope Width", tickformat=".1%", secondary_y=True)
+    fig.update_layout(xaxis=dict(rangeselector=RANGE_SELECTOR, rangeslider=dict(visible=False)))
+    return fig
+
+
 # ---------------------------- Header ----------------------------
 st.title("MK Trend Following Analytics Engine")
 st.caption(f"By Murat Konuklar  |  {APP_VERSION} Streamlit Cloud  |  Institutional Trend Systems")
@@ -503,11 +652,80 @@ with st.sidebar:
         help="Preserves the original workbook's inclusive Excel OFFSET window semantics exactly.",
     )
 
+    st.divider()
+    st.subheader("Nadaraya-Watson Trend Module")
+    nw_enabled = st.toggle(
+        "Enable Nadaraya-Watson Research Layer",
+        value=True,
+        help="Independent causal Python implementation of the public QuantAlgo Nadaraya-Watson Trend methodology.",
+    )
+
+    nw_preset = st.selectbox(
+        "NW Research Preset",
+        ["MK Institutional Balanced", "Public-Methodology Gaussian", "MK Fast Research", "MK Smooth Position", "Custom"],
+        index=0,
+        disabled=not nw_enabled,
+        help="Numeric presets are MK Engine research presets; they are not claimed to be QuantAlgo's proprietary/default parameter values.",
+    )
+
+    preset_map = {
+        "MK Institutional Balanced": dict(lookback=100, bandwidth=12.0, kernel="Rational Quadratic", relative_weight=1.0, band_multiplier=2.0, confirmation=2, exit_confirmation=2),
+        "Public-Methodology Gaussian": dict(lookback=100, bandwidth=8.0, kernel="Gaussian", relative_weight=1.0, band_multiplier=2.0, confirmation=1, exit_confirmation=1),
+        "MK Fast Research": dict(lookback=50, bandwidth=8.0, kernel="Gaussian", relative_weight=1.0, band_multiplier=1.8, confirmation=1, exit_confirmation=1),
+        "MK Smooth Position": dict(lookback=150, bandwidth=20.0, kernel="Rational Quadratic", relative_weight=1.5, band_multiplier=2.2, confirmation=3, exit_confirmation=2),
+    }
+    _nw_defaults = preset_map.get(nw_preset, preset_map["MK Institutional Balanced"])
+
+    nw_kernel = st.selectbox(
+        "Kernel", list(NW_KERNELS),
+        index=list(NW_KERNELS).index(_nw_defaults["kernel"]),
+        disabled=(not nw_enabled) or nw_preset != "Custom",
+    ) if nw_preset == "Custom" else _nw_defaults["kernel"]
+    if nw_preset != "Custom" and nw_enabled:
+        st.caption(f"Kernel: **{nw_kernel}**")
+
+    if nw_preset == "Custom":
+        nw_lookback = st.number_input("NW Lookback", min_value=2, value=100, step=1, disabled=not nw_enabled)
+        nw_bandwidth = st.number_input("NW Bandwidth", min_value=0.1, value=8.0, step=0.5, disabled=not nw_enabled)
+        nw_h_mult = st.number_input("Bandwidth Multiplier", min_value=0.1, value=1.0, step=0.1, disabled=not nw_enabled)
+        nw_relative_weight = st.number_input("RQ Relative Weight", min_value=0.05, value=1.0, step=0.25, disabled=not nw_enabled)
+        nw_band_mult = st.number_input("Residual Band Multiplier", min_value=0.1, value=2.0, step=0.1, disabled=not nw_enabled)
+        nw_confirmation = st.number_input("Bullish Confirmation Bars", min_value=1, value=2, step=1, disabled=not nw_enabled)
+        nw_exit_confirmation = st.number_input("Bearish Exit Confirmation Bars", min_value=1, value=1, step=1, disabled=not nw_enabled)
+    else:
+        nw_lookback = int(_nw_defaults["lookback"])
+        nw_bandwidth = float(_nw_defaults["bandwidth"])
+        nw_h_mult = 1.0
+        nw_relative_weight = float(_nw_defaults["relative_weight"])
+        nw_band_mult = float(_nw_defaults["band_multiplier"])
+        nw_confirmation = int(_nw_defaults["confirmation"])
+        nw_exit_confirmation = int(_nw_defaults["exit_confirmation"])
+        if nw_enabled:
+            st.caption(
+                f"Lookback {nw_lookback} | Bandwidth {nw_bandwidth:g} | Residual Band ×{nw_band_mult:g} | "
+                f"Confirm {nw_confirmation}/{nw_exit_confirmation}"
+            )
+
+    nw_source = st.selectbox("NW Price Source", ["Adjusted Close", "HLC3", "OHLC4"], index=0, disabled=not nw_enabled)
+    nw_strategy_mode_label = st.selectbox(
+        "NW Strategy Logic",
+        ["MK Confirmed Trend", "Public-Methodology Reversal Translation"],
+        index=0, disabled=not nw_enabled,
+    )
+    nw_strategy_mode = {
+        "MK Confirmed Trend": "MK_CONFIRMED_TREND",
+        "Public-Methodology Reversal Translation": "QUANTALGO_REVERSAL_TRANSLATION",
+    }[nw_strategy_mode_label]
+    nw_avoid_chase = st.toggle(
+        "Avoid Entry Above Upper Residual Band", value=True, disabled=not nw_enabled,
+        help="MK strategy risk filter: do not initiate a new long when price is already beyond the upper residual envelope.",
+    )
+
     run_clicked = st.button("RUN ANALYSIS", type="primary", use_container_width=True)
 
 
 # ---------------------------- State ----------------------------
-STATE_SCHEMA_VERSION = 2
+STATE_SCHEMA_VERSION = 3
 _previous_schema = st.session_state.get("_state_schema_version")
 if _previous_schema != STATE_SCHEMA_VERSION:
     # Clear only computed analysis objects from an older deployed code schema.
@@ -516,6 +734,8 @@ if _previous_schema != STATE_SCHEMA_VERSION:
         "result", "summary", "config", "raw", "decision", "trades", "trade_stats",
         "ticker", "instrument_name", "market", "group", "interval", "interval_label",
         "entry_mode", "entry_gate_label", "entry_lookback",
+        "nw_enabled", "nw_result", "nw_indicator", "nw_config", "nw_strategy_config",
+        "nw_summary", "nw_decision", "nw_trades", "nw_trade_stats", "nw_preset",
     ]:
         st.session_state.pop(_k, None)
     st.session_state["_state_schema_version"] = STATE_SCHEMA_VERSION
@@ -523,6 +743,8 @@ if _previous_schema != STATE_SCHEMA_VERSION:
 for key, default in {
     "result": None, "summary": None, "config": None, "raw": None,
     "decision": None, "trades": None, "trade_stats": None,
+    "nw_result": None, "nw_indicator": None, "nw_config": None, "nw_strategy_config": None,
+    "nw_summary": None, "nw_decision": None, "nw_trades": None, "nw_trade_stats": None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -558,6 +780,34 @@ if run_clicked:
             trades = trade_ledger(result)
             tstats = trade_statistics(trades)
 
+            if nw_enabled:
+                nw_cfg = NWConfig(
+                    lookback=int(nw_lookback),
+                    bandwidth=float(nw_bandwidth),
+                    bandwidth_multiplier=float(nw_h_mult),
+                    kernel=nw_kernel,
+                    relative_weight=float(nw_relative_weight),
+                    band_multiplier=float(nw_band_mult),
+                    source=nw_source,
+                    minimum_observations=cfg.minimum_observations,
+                )
+                nw_scfg = NWStrategyConfig(
+                    mode=nw_strategy_mode,
+                    confirmation_bars=int(nw_confirmation),
+                    exit_confirmation_bars=int(nw_exit_confirmation),
+                    avoid_upper_band_chase=bool(nw_avoid_chase),
+                    initial_capital=float(initial_capital),
+                )
+                nw_indicator = compute_nadaraya_watson(result, nw_cfg)
+                nw_result = run_nw_strategy(result, nw_indicator, nw_scfg)
+                nw_summary = performance_summary(nw_result, initial_capital=nw_scfg.initial_capital)
+                nw_decision = nw_decision_snapshot(nw_result, nw_scfg)
+                nw_trades = trade_ledger(nw_result)
+                nw_tstats = trade_statistics(nw_trades)
+            else:
+                nw_cfg = nw_scfg = nw_indicator = nw_result = None
+                nw_summary = nw_decision = nw_trades = nw_tstats = None
+
         st.session_state.result = result
         st.session_state.summary = summary
         st.session_state.config = cfg
@@ -574,6 +824,16 @@ if run_clicked:
         st.session_state.entry_mode = entry_mode_label
         st.session_state.entry_gate_label = entry_gate_label
         st.session_state.entry_lookback = int(max_buy_weeks)
+        st.session_state.nw_enabled = bool(nw_enabled)
+        st.session_state.nw_result = nw_result
+        st.session_state.nw_indicator = nw_indicator
+        st.session_state.nw_config = nw_cfg
+        st.session_state.nw_strategy_config = nw_scfg
+        st.session_state.nw_summary = nw_summary
+        st.session_state.nw_decision = nw_decision
+        st.session_state.nw_trades = nw_trades
+        st.session_state.nw_trade_stats = nw_tstats
+        st.session_state.nw_preset = nw_preset
     except (DataIntegrityError, MarketDataError) as exc:
         st.error(f"STRICT DATA STOP — {exc}")
         st.stop()
@@ -598,6 +858,16 @@ cfg = st.session_state.get("config")
 decision = st.session_state.get("decision")
 trades = st.session_state.get("trades")
 tstats = st.session_state.get("trade_stats")
+nw_enabled_used = bool(st.session_state.get("nw_enabled", False))
+nw_result = st.session_state.get("nw_result")
+nw_indicator = st.session_state.get("nw_indicator")
+nw_cfg = st.session_state.get("nw_config")
+nw_scfg = st.session_state.get("nw_strategy_config")
+nw_summary = st.session_state.get("nw_summary")
+nw_decision = st.session_state.get("nw_decision")
+nw_trades = st.session_state.get("nw_trades")
+nw_tstats = st.session_state.get("nw_trade_stats")
+nw_preset_used = st.session_state.get("nw_preset", "")
 
 entry_gate_label_used = st.session_state.get("entry_gate_label", "")
 entry_lookback_state = st.session_state.get("entry_lookback")
@@ -634,6 +904,7 @@ k8.metric("Ann. Volatility", fmt_pct(summary["annualized_volatility"]))
 tabs = st.tabs([
     "Executive & Decision",
     "Price & Signals",
+    "Nadaraya-Watson Trend",
     "Strategy vs Buy & Hold",
     "Risk Analytics",
     "Trend Diagnostics",
@@ -707,6 +978,122 @@ with tabs[1]:
     st.plotly_chart(make_price_chart(result, cfg, chart_mode), use_container_width=True, config=PLOT_CFG)
 
 with tabs[2]:
+    if not nw_enabled_used or nw_result is None:
+        st.info("Nadaraya-Watson research layer was disabled for this run. Enable it in the sidebar and run the analysis again.")
+    else:
+        st.markdown(
+            "<div class='section-note'><b>Methodology attribution:</b> QuantAlgo's public/open-source TradingView "
+            "Nadaraya-Watson Trend describes a one-sided causal kernel estimator, six selectable kernels, kernel-weighted "
+            "absolute-residual bands, and slope-reversal markers. The Python implementation here is an independent "
+            "reimplementation of that public methodology; the MK strategy layer is separately specified and uses next-open execution.</div>",
+            unsafe_allow_html=True,
+        )
+
+        n1,n2,n3,n4,n5,n6,n7 = st.columns(7)
+        n1.metric("NW Strategy Decision", nw_decision["decision"])
+        n2.metric("NW Trend Regime", nw_decision["trend_direction"])
+        n3.metric("Price / NW Gap", fmt_pct(nw_decision["price_trend_gap"]))
+        n4.metric("Residual Band Width", fmt_pct(nw_decision["band_width_pct"]))
+        n5.metric("NW Strategy CAGR", fmt_pct(nw_summary["strategy_cagr"]))
+        n6.metric("NW Max Drawdown", fmt_pct(nw_summary["max_drawdown"]))
+        n7.metric("NW Closed Trades", f"{nw_tstats['closed_trades']:,}")
+
+        st.markdown("#### Nadaraya-Watson Price Structure")
+        st.plotly_chart(make_nw_overlay_chart(nw_result, nw_cfg), use_container_width=True, config=PLOT_CFG)
+
+        left,right = st.columns([1.2,1])
+        with left:
+            st.markdown("#### NW Decision Causality")
+            st.markdown(
+                f'''<div class="decision-card">
+                    <div class="decision-label">Current NW Strategy State</div>
+                    <div class="decision-value">{nw_decision['decision']}</div>
+                    <div class="decision-reason">{nw_decision['rationale']}</div>
+                </div>''',
+                unsafe_allow_html=True,
+            )
+            st.dataframe(nw_decision["gates"], use_container_width=True, hide_index=True, height=270)
+        with right:
+            st.markdown("#### Causal Strategy Rules")
+            st.markdown(
+                f"**Strategy:** {strategy_mode_label(nw_scfg.mode)}  \n"
+                f"**Preset:** {nw_preset_used}  \n"
+                f"**Kernel:** {nw_cfg.kernel}  \n"
+                f"**Lookback:** {nw_cfg.lookback} bars  \n"
+                f"**Effective bandwidth:** {nw_cfg.effective_bandwidth:g}  \n"
+                f"**Residual bands:** ± {nw_cfg.band_multiplier:g} × kernel-weighted mean absolute residual  \n"
+                f"**Entry condition:** {nw_decision['entry_reason']}  \n"
+                f"**Exit condition:** {nw_decision['exit_reason']}"
+            )
+            st.caption(nw_decision["timing_note"])
+            st.warning(
+                "The QuantAlgo publication is an indicator. The BUY/SELL portfolio rules shown here are the explicitly defined MK research translation / strategy layer, not a claim that QuantAlgo publishes or endorses this backtest strategy."
+            )
+
+        st.markdown("#### NW Strategy Performance")
+        st.plotly_chart(make_nw_equity_chart(nw_result), use_container_width=True, config=PLOT_CFG)
+        c1,c2,c3,c4,c5 = st.columns(5)
+        c1.metric("NW Final Value", f"{nw_summary['portfolio_final']:,.0f}")
+        c2.metric("Buy & Hold Final", f"{nw_summary['buyhold_final']:,.0f}")
+        c3.metric("CAGR Spread", fmt_pct(nw_summary["strategy_cagr"]-nw_summary["buyhold_cagr"]))
+        c4.metric("Win Rate", fmt_pct(nw_tstats["win_rate"]))
+        c5.metric("Avg Holding Days", fmt_num(nw_tstats["avg_holding_days"],0))
+
+        c_left,c_right = st.columns(2)
+        with c_left:
+            st.plotly_chart(make_nw_kernel_chart(nw_cfg), use_container_width=True, config=PLOT_CFG)
+        with c_right:
+            st.plotly_chart(make_nw_state_chart(nw_result), use_container_width=True, config=PLOT_CFG)
+
+        st.markdown("#### Strategy Research Comparison — Same Market Data")
+        compare = pd.DataFrame([
+            {
+                "System":"Active Legacy Strategy",
+                "CAGR":summary["strategy_cagr"],
+                "Max Drawdown":summary["max_drawdown"],
+                "Final Value":summary["portfolio_final"],
+                "Closed Trades":tstats["closed_trades"],
+            },
+            {
+                "System":strategy_mode_label(nw_scfg.mode),
+                "CAGR":nw_summary["strategy_cagr"],
+                "Max Drawdown":nw_summary["max_drawdown"],
+                "Final Value":nw_summary["portfolio_final"],
+                "Closed Trades":nw_tstats["closed_trades"],
+            },
+            {
+                "System":"Buy & Hold",
+                "CAGR":nw_summary["buyhold_cagr"],
+                "Max Drawdown":nw_summary["buyhold_max_drawdown"],
+                "Final Value":nw_summary["buyhold_final"],
+                "Closed Trades":0,
+            },
+        ])
+        st.dataframe(
+            compare.style.format({"CAGR":"{:.2%}","Max Drawdown":"{:.2%}","Final Value":"{:,.0f}"}),
+            use_container_width=True, hide_index=True,
+        )
+
+        with st.expander("NW Strategy Trade Ledger", expanded=False):
+            st.dataframe(nw_trades.sort_values("Entry Date", ascending=False) if len(nw_trades) else nw_trades, use_container_width=True, hide_index=True, height=460)
+
+        nw_html = build_nw_html_report(
+            nw_result, nw_cfg, nw_scfg,
+            ticker=ticker_used,
+            instrument_name=name_used,
+            market_label=f"{market_used} / {group_used}",
+            source_note=f"Yahoo Finance via yfinance | {interval_used} | strict no-fallback policy",
+        )
+        st.download_button(
+            "Export Nadaraya-Watson Interactive HTML",
+            data=nw_html.encode("utf-8"),
+            file_name=f"MK_Nadaraya_Watson_{ticker_used}_{interval_used}_v006.html",
+            mime="text/html",
+            use_container_width=True,
+        )
+
+
+with tabs[3]:
     st.plotly_chart(make_equity_chart(result, entry_gate_label_used), use_container_width=True, config=PLOT_CFG)
     e1,e2,e3,e4 = st.columns(4)
     total_strategy = summary["portfolio_final"] / cfg.initial_capital - 1.0
@@ -756,7 +1143,7 @@ with tabs[2]:
             )
             st.dataframe(cash_df, use_container_width=True, hide_index=True)
 
-with tabs[3]:
+with tabs[4]:
     st.markdown(
         "<div class='section-note'><b>Risk-source separation:</b> Underlying Asset risk is calculated from the instrument's "
         "adjusted-close series. Strategy risk is calculated separately from the portfolio equity curve. "
@@ -840,7 +1227,7 @@ with tabs[3]:
     r3.metric("Best Closed Trade", fmt_pct(tstats["best_trade"]))
     r4.metric("Worst Closed Trade", fmt_pct(tstats["worst_trade"]))
 
-with tabs[4]:
+with tabs[5]:
     st.plotly_chart(make_trend_diagnostics(result), use_container_width=True, config=PLOT_CFG)
     st.markdown(
         "<div class='section-note'>All three legacy thresholds are shown simultaneously for diagnosis. "
@@ -849,7 +1236,7 @@ with tabs[4]:
         unsafe_allow_html=True,
     )
 
-with tabs[5]:
+with tabs[6]:
     if trades is None or trades.empty:
         st.info("No completed or open trades were generated in the selected history.")
     else:
@@ -862,7 +1249,7 @@ with tabs[5]:
         st.dataframe(tdisplay.sort_values("Entry Date", ascending=False), use_container_width=True, hide_index=True, height=520)
         st.caption("Trade returns use executed adjusted-open prices; an open trade is marked to the latest adjusted close.")
 
-with tabs[6]:
+with tabs[7]:
     show_cols = [
         "Open","High","Low","Close","Volume","Adj Close","Return","TrueRange","ATR_Stop",
         "MaxPrice","Signal","Shares","Cash","Portfolio","BuyHold","LowerBollinger","ATRTrailingStop"
@@ -875,7 +1262,7 @@ with tabs[6]:
         mime="text/csv",
     )
 
-with tabs[7]:
+with tabs[8]:
     universe_df = pd.DataFrame(flat_universe_rows())
     uc1, uc2 = st.columns(2)
     with uc1:
@@ -891,7 +1278,19 @@ with tabs[7]:
     st.dataframe(filt, use_container_width=True, hide_index=True, height=580)
     st.caption("This is a curated convenience universe, not an exhaustive exchange constituent list. Manual Yahoo ticker input remains available for instruments outside the list.")
 
-with tabs[8]:
+with tabs[9]:
+    st.markdown("""
+### Nadaraya-Watson Trend research layer
+The NW module independently implements the public QuantAlgo methodology: a **one-sided causal endpoint estimator** using only the current and historical bars; Gaussian, Rational Quadratic, Epanechnikov, Triangular, Quartic and Cosine kernels; an effective bandwidth `h = bandwidth × multiplier`; and optional residual bands based on a kernel-weighted mean absolute residual around the current NW estimate.
+
+Trend direction is the bar-to-bar slope of the NW estimate. A bullish reversal is a non-positive → positive slope transition; a bearish reversal is a non-negative → negative transition. Because only past/current observations are used, appended future bars cannot rewrite a historical NW estimate.
+
+**Attribution:** methodology reference is *Nadaraya-Watson Trend [QuantAlgo]* on TradingView. The Pine source is not redistributed verbatim in this project. Numeric MK presets and the portfolio strategy rules are our own research layer.
+
+### MK causal NW strategy
+The indicator and the strategy are deliberately separated. The strategy reads a signal only from a **completed prior bar** and executes any trade at the **next adjusted open**. `MK Confirmed NW Trend` requires persistent bullish NW direction plus price above the path, with an optional upper-residual-band chase filter; exits occur when price loses the path or bearish direction confirms. `Public-Methodology Reversal Translation` is a simpler research translation built around bullish/bearish slope reversals and price relative to the NW path. Neither is presented as a QuantAlgo trading recommendation.
+
+""")
     st.markdown(f"""
 ### Entry-gate governance
 The engine field historically named `max_buy_weeks` is actually an **observation-count lookback**.  
@@ -940,7 +1339,7 @@ html_doc = build_html(
 st.download_button(
     "Export Standalone Interactive HTML",
     data=html_doc.encode("utf-8"),
-    file_name=f"MK_Trend_Following_{ticker_used}_{interval_used}_v004.html",
+    file_name=f"MK_Trend_Following_{ticker_used}_{interval_used}_v006.html",
     mime="text/html",
     use_container_width=True,
 )

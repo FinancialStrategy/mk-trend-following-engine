@@ -1,0 +1,14 @@
+{
+  "project": "MK Trend Following Analytics Engine",
+  "version": "v0.06",
+  "author": "Murat Konuklar",
+  "entrypoint": "app.py",
+  "live_market_data": "Yahoo Finance via yfinance only",
+  "synthetic_market_data": false,
+  "fallback_market_data": false,
+  "price_fill": false,
+  "legacy_golden_master_preserved": true,
+  "new_module": "Nadaraya-Watson Trend",
+  "methodology_reference": "QuantAlgo open-source TradingView Nadaraya-Watson Trend",
+  "implementation": "Independent Python implementation; Pine source not redistributed verbatim"
+}

@@ -1,57 +1,59 @@
-# MK Trend Following Analytics Engine — Streamlit Cloud v0.02
+# MK Trend Following Analytics Engine v0.06
 
 **By Murat Konuklar**  
-**MK FinTECH LabGEN @2026 ATELIER ISTANBUL**
+MK FinTECH LabGEN @2026 ATELIER ISTANBUL
 
-Validated legacy trend-following engine with strict Yahoo Finance data governance, institutional Streamlit UI, decision causality, interactive analytics and standalone HTML export.
+Institutional Streamlit trend-following research engine with validated legacy Excel replication plus a causal Nadaraya-Watson Trend research layer.
 
-## v0.02 highlights
+## Live market-data governance
 
-- BIST / US Stocks / Precious Metals curated instrument selector.
-- Manual Yahoo ticker remains available.
-- BUY / HOLD / SELL / WAIT-CASH portfolio decision layer.
-- Explicit Decision Causality Matrix.
-- Interactive Plotly candlestick, volume, stops, BUY/SELL executions and time-range controls.
-- Strategy vs Buy & Hold, drawdown, rolling risk and trend diagnostics.
-- Trade Ledger and trade statistics.
-- Standalone interactive HTML v0.02 export.
-- Validated legacy core retained without changing Golden Master mathematics.
+- Yahoo Finance via `yfinance` only.
+- No synthetic market observations.
+- No alternate market-data fallback.
+- No price forward-fill / back-fill.
+- Incomplete or malformed Yahoo responses stop the requested run.
 
-## Strict Data Governance
+## Strategy architecture
 
-- Yahoo Finance via `yfinance` is the only live market-data source.
-- No synthetic data.
-- No alternate vendor fallback.
-- No forward-fill / back-fill of missing market prices.
-- Malformed or incomplete Yahoo data produces a hard stop.
-- `auto_adjust=False`, `repair=False`.
+Legacy validated systems remain intact:
 
-## App entry point
+- ATR
+- Bollinger
+- ATR Trailing Stop
 
-`app.py`
+Additive v0.06 research layer:
 
-## Required root modules
+- Nadaraya-Watson Trend public-methodology implementation
+- Six kernels
+- Kernel-weighted residual bands
+- Causal slope-reversal states
+- MK Confirmed NW Trend strategy
+- Public-Methodology Reversal Translation
+- Next-open execution backtest
+- Dedicated interactive charts and HTML export
 
-- `app.py`
-- `MK_Trend_Following_Engine_v001.py`
-- `MK_Trend_Following_Decision_Engine_v002.py`
-- `MK_Trend_Following_Universe_v002.py`
-- `MK_Trend_Following_HTML_Report_v002.py`
-- `requirements.txt`
+See `NADARAYA_WATSON_INTEGRATION_v006.md` for methodology and attribution.
 
-## Local validation
+## Streamlit Cloud
 
-```bash
-pip install -r requirements.txt
-python smoke_test.py
-streamlit run app.py
+Main file:
+
+```text
+app.py
 ```
 
-## Streamlit Community Cloud
+Python: `3.12`
 
-- Branch: `main`
-- Main file path: `app.py`
-- Recommended Python: `3.12`
-- No secrets required in this Yahoo-only version.
+No secrets are required in this Yahoo-only build.
 
-See `UPDATE_TO_V002_TR.md` for the Turkish update steps.
+## Validation
+
+GitHub Actions runs:
+
+- original GE Golden Master replication
+- decision/report integration
+- rolling-risk tests
+- entry-gate tests
+- cold-start regression
+- Nadaraya-Watson six-kernel + causal prefix-invariance + next-open execution tests
+- Streamlit headless health check
