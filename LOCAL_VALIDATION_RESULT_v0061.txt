@@ -1,0 +1,30 @@
+MK Trend Following Analytics Engine v0.06.1
+LAYOUT HOTFIX VALIDATION
+By Murat Konuklar
+============================================================
+Python compile: PASS
+Legacy Golden Master: PASS
+Nadaraya-Watson validation: PASS
+Layout change scope: HEADER / TITLE / RANGE-SELECTOR SPACING ONLY
+Synthetic market data: NO
+Fallback market data: NO
+
+PASS — Golden Master replication
+Observations: 1,043
+Final Strategy: 1,449,095.223507
+Final Buy & Hold: 747,161.572052
+No live market data was requested by this test.
+
+PASS — Nadaraya-Watson Trend v0.06 validation
+Observations: 1,043
+Kernels validated: 6
+Causal prefix-invariance checkpoints: 4/4
+NW strategy BUY executions: 56
+NW strategy SELL executions: 56
+NW strategy final value: 243,078.79
+NW strategy CAGR: 4.5463%
+NW strategy max drawdown: -45.4593%
+Closed trades: 56
+Synthetic market data: NO
+Fallback source: NO
+Forward/back fill of market prices: NO

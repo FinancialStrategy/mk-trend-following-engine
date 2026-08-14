@@ -55,7 +55,7 @@ from MK_Nadaraya_Watson_Trend_v006 import (
 from MK_Nadaraya_Watson_HTML_Report_v006 import build_nw_html_report
 
 
-APP_VERSION = "v0.06"
+APP_VERSION = "v0.06.1"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -74,7 +74,7 @@ RANGE_SELECTOR = dict(
     ],
     x=0,
     xanchor="left",
-    y=1.12,
+    y=1.22,
     yanchor="top",
     bgcolor="#FFFFFF",
     activecolor="#E2E8F0",
@@ -124,10 +124,13 @@ def fmt_num(v, d=2):
 
 def _base_layout(fig, title, height=560, ytitle=None):
     fig.update_layout(
-        title=dict(text=title, x=0.01, xanchor="left", font=dict(size=15, color="#0F172A")),
+        title=dict(
+            text=title, x=0.01, xanchor="left", y=0.955, yanchor="top",
+            font=dict(size=15, color="#0F172A"), pad=dict(t=4, b=4)
+        ),
         template="plotly_white",
         height=height,
-        margin=dict(l=52, r=24, t=76, b=38),
+        margin=dict(l=52, r=24, t=116, b=38),
         font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif", size=11, color="#334155"),
         hovermode="x unified",
         legend=dict(orientation="h", y=1.04, x=1, xanchor="right", yanchor="bottom"),
@@ -240,10 +243,10 @@ def make_equity_chart(df, entry_label=""):
         title += f" — {entry_label}"
 
     fig.update_layout(
-        title=dict(text=title, x=0.01, xanchor="left", font=dict(size=15, color="#0F172A")),
+        title=dict(text=title, x=0.01, xanchor="left", y=0.955, yanchor="top", font=dict(size=15, color="#0F172A"), pad=dict(t=4, b=4)),
         template="plotly_white",
         height=660,
-        margin=dict(l=52, r=24, t=92, b=38),
+        margin=dict(l=52, r=24, t=124, b=38),
         font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif", size=11, color="#334155"),
         hovermode="x unified",
         legend=dict(orientation="h", y=1.03, x=1, xanchor="right", yanchor="bottom"),
@@ -380,13 +383,14 @@ def make_strategy_rolling_risk_chart(df, rolling, spec):
     fig.update_layout(
         title=dict(
             text="Trend Strategy Rolling Risk & Market Exposure",
-            x=0.01, xanchor="left",
+            x=0.01, xanchor="left", y=0.955, yanchor="top",
             font=dict(size=16, family="Arial, sans-serif", color="#111827"),
+            pad=dict(t=4, b=4),
         ),
         height=650,
         template="plotly_white",
         hovermode="x unified",
-        margin=dict(l=45, r=45, t=60, b=30),
+        margin=dict(l=45, r=45, t=118, b=30),
         legend=dict(orientation="h", y=1.04, x=0),
         paper_bgcolor="white",
         plot_bgcolor="white",
@@ -481,10 +485,11 @@ def make_nw_overlay_chart(df, nw_cfg):
     fig.update_layout(
         title=dict(
             text=f"Nadaraya-Watson Trend — {nw_cfg.kernel} Kernel | Lookback {nw_cfg.lookback} | h={nw_cfg.effective_bandwidth:g}",
-            x=0.01, xanchor="left", font=dict(size=15, color="#0F172A")
+            x=0.01, xanchor="left", y=0.955, yanchor="top",
+            font=dict(size=15, color="#0F172A"), pad=dict(t=4, b=4)
         ),
         template="plotly_white", height=690, hovermode="x unified",
-        margin=dict(l=45, r=25, t=85, b=35),
+        margin=dict(l=45, r=25, t=126, b=35),
         legend=dict(orientation="h", y=1.03, x=1, xanchor="right", yanchor="bottom"),
         xaxis_rangeslider_visible=False,
         paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
@@ -510,9 +515,9 @@ def make_nw_equity_chart(df):
         line=dict(width=1.2, color="#475569"), fill="tozeroy", fillcolor="rgba(71,85,105,0.10)"
     ), row=2, col=1)
     fig.update_layout(
-        title=dict(text="MK Causal Nadaraya-Watson Strategy vs Buy & Hold", x=0.01, xanchor="left", font=dict(size=15)),
+        title=dict(text="MK Causal Nadaraya-Watson Strategy vs Buy & Hold", x=0.01, xanchor="left", y=0.955, yanchor="top", font=dict(size=15), pad=dict(t=4, b=4)),
         template="plotly_white", height=620, hovermode="x unified",
-        margin=dict(l=45, r=25, t=75, b=30),
+        margin=dict(l=45, r=25, t=118, b=30),
         legend=dict(orientation="h", y=1.03, x=1, xanchor="right"),
         font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif", size=11),
     )
