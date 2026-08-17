@@ -1,0 +1,5 @@
+MK Trend Following Analytics Engine v0.07
+DEMA-MACD BUY / SELL Confirmation & Calibration Integration
+By Murat Konuklar
+Build date: 2026-08-17
+Architecture policy: additive; legacy + NW modules preserved.

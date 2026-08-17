@@ -1,0 +1,27 @@
+MK TREND FOLLOWING ANALYTICS ENGINE v0.07
+DEMA-MACD BUY / SELL CONFIRMATION VALIDATION
+By Murat Konuklar
+============================================================
+Historical QA fixture: Matplotlib bundled GOOG OHLCV (real historical sample; never live/fallback data)
+Rows: 1,047
+Date range: 2004-08-19 -> 2008-10-14
+Synthetic market observations: NO
+Alternate live market-data fallback: NO
+DEMA causal prefix invariance: PASS (max error 0.000e+00)
+Prior-bar / next-adjusted-open execution: PASS
+BUY/SELL lifecycle coverage: PASS
+SELL events: 11
+RISK EXIT events: 10
+REDUCE states: 35
+Closed trades: 21
+Current DEMA state: BUY WATCH
+Strategy CAGR on QA fixture: 16.6974%
+Strategy Max Drawdown on QA fixture: -30.9778%
+Avg Net Exit Utility (20-bar proxy): 0.6302%
+False Exit Proxy Rate: 33.3333%
+Focused calibration candidates: 48
+Final OOS used for parameter selection: NO
+Walk-forward folds: 2
+Best robustness-selected params: {'fast_length': 12, 'slow_length': 30, 'signal_length': 9, 'buy_threshold': 65.0, 'sell_threshold': 65.0}
+Standalone DEMA HTML generation: PASS
+Overall DEMA v0.07 validation: PASS

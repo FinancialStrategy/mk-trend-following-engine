@@ -1,0 +1,26 @@
+AST PASS app.py
+AST PASS MK_Trend_Following_Engine_v001.py
+AST PASS MK_Trend_Following_Decision_Engine_v002.py
+AST PASS MK_Trend_Following_Entry_Gate_v005.py
+AST PASS MK_Trend_Following_Risk_Analytics_v003.py
+AST PASS MK_Trend_Following_Risk_Analytics_v004.py
+AST PASS MK_Trend_Following_Universe_v002.py
+AST PASS MK_Trend_Following_HTML_Report_v003.py
+AST PASS MK_Nadaraya_Watson_Trend_v006.py
+AST PASS MK_Nadaraya_Watson_HTML_Report_v006.py
+AST PASS MK_DEMA_MACD_Confirmation_v007.py
+AST PASS MK_DEMA_MACD_HTML_Report_v007.py
+AST PASS dema_macd_validation_v007.py
+IMPORT PASS MK_Trend_Following_Engine_v001
+IMPORT PASS MK_Trend_Following_Decision_Engine_v002
+IMPORT PASS MK_Trend_Following_Entry_Gate_v005
+IMPORT PASS MK_Trend_Following_Risk_Analytics_v003
+IMPORT PASS MK_Trend_Following_Risk_Analytics_v004
+IMPORT PASS MK_Trend_Following_Universe_v002
+IMPORT PASS MK_Trend_Following_HTML_Report_v003
+IMPORT PASS MK_Nadaraya_Watson_Trend_v006
+IMPORT PASS MK_Nadaraya_Watson_HTML_Report_v006
+IMPORT PASS MK_DEMA_MACD_Confirmation_v007
+IMPORT PASS MK_DEMA_MACD_HTML_Report_v007
+APP v0.07 INTEGRATION TOKENS PASS
+SMOKE TEST PASS

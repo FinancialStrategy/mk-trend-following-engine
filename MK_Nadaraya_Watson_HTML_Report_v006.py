@@ -1,4 +1,4 @@
-"""Standalone institutional HTML report for MK Nadaraya-Watson Trend v0.06.1.
+"""Standalone institutional HTML report for MK Nadaraya-Watson Trend v0.06.
 By Murat Konuklar
 """
 from __future__ import annotations
@@ -26,16 +26,14 @@ RANGE_SELECTOR = dict(buttons=[
     dict(count=1,label="1Y",step="year",stepmode="backward"),
     dict(count=3,label="3Y",step="year",stepmode="backward"),
     dict(step="all",label="ALL"),
-], x=0, xanchor="left", y=1.22, yanchor="top",
-   bgcolor="#FFFFFF", activecolor="#E2E8F0", bordercolor="#CBD5E1", borderwidth=1)
+], bgcolor="#FFFFFF", activecolor="#E2E8F0", bordercolor="#CBD5E1", borderwidth=1)
 
 
 def _layout(fig, title, height=520):
     fig.update_layout(
-        title=dict(text=title,x=0.01,xanchor="left",y=0.955,yanchor="top",
-                   font=dict(size=16,color="#0F172A"),pad=dict(t=4,b=4)),
+        title=dict(text=title,x=0.01,xanchor="left",font=dict(size=16,color="#0F172A")),
         template="plotly_white",height=height,hovermode="x unified",
-        margin=dict(l=50,r=30,t=120,b=35),
+        margin=dict(l=50,r=30,t=80,b=35),
         legend=dict(orientation="h",y=1.03,x=1,xanchor="right"),
         paper_bgcolor="#FFFFFF",plot_bgcolor="#FFFFFF",
         font=dict(family="Arial, Helvetica, sans-serif",size=11,color="#334155"),

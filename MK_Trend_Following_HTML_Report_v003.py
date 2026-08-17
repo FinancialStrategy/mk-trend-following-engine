@@ -25,16 +25,14 @@ RANGE_SELECTOR = dict(
         dict(count=1,label="1Y",step="year",stepmode="backward"),
         dict(count=3,label="3Y",step="year",stepmode="backward"),
         dict(step="all",label="ALL"),
-    ], x=0, y=1.22, xanchor="left", yanchor="top",
-    bgcolor="#FFFFFF", activecolor="#E2E8F0", bordercolor="#CBD5E1", borderwidth=1,
+    ], x=0, y=1.12, bgcolor="#FFFFFF", activecolor="#E2E8F0", bordercolor="#CBD5E1", borderwidth=1,
 )
 
 
 def _fig_layout(fig,title,ytitle=None,height=430):
     fig.update_layout(
-        title={"text":title,"x":0.01,"xanchor":"left","y":0.955,"yanchor":"top",
-               "font":{"size":16,"family":FONT,"color":"#111827"},"pad":{"t":4,"b":4}},
-        template="plotly_white",height=height,margin=dict(l=58,r=25,t=118,b=45),
+        title={"text":title,"x":0.01,"xanchor":"left","font":{"size":16,"family":FONT,"color":"#111827"}},
+        template="plotly_white",height=height,margin=dict(l=58,r=25,t=74,b=45),
         font=dict(family=FONT,size=11,color="#374151"),hovermode="x unified",
         legend=dict(orientation="h",yanchor="bottom",y=1.02,xanchor="right",x=1,bgcolor="rgba(255,255,255,0)"),
         paper_bgcolor="#ffffff",plot_bgcolor="#ffffff",
