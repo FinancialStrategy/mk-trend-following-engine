@@ -25,6 +25,9 @@ jobs:
       - name: Compile Python files
         run: |
           python -m py_compile app.py
+          python -m py_compile MK_Benchmark_Relative_v007.py
+          python -m py_compile MK_Institutional_Tactical_v007.py
+          python -m py_compile institutional_tactical_validation_v007.py
           python -m py_compile MK_Trend_Following_Engine_v001.py
           python -m py_compile MK_Trend_Following_Decision_Engine_v002.py
           python -m py_compile MK_Trend_Following_Universe_v002.py
@@ -89,3 +92,6 @@ jobs:
           done
           cat /tmp/streamlit.log
           exit 1
+
+      - name: Institutional tactical validation v0.07
+        run: python institutional_tactical_validation_v007.py
