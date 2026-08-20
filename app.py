@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -54,13 +53,13 @@ from MK_Nadaraya_Watson_Trend_v006 import (
     strategy_mode_label,
 )
 from MK_Nadaraya_Watson_HTML_Report_v006 import build_nw_html_report
-from MK_DEMA_MACD_Confirmation_v007 import (
-    DEMAMACDConfig, DEMAStrategyConfig, DEMACalibrationConfig,
-    compute_dema_macd, run_dema_macd_strategy, dema_decision_snapshot,
-    dema_event_ledger, dema_trade_ledger, exit_quality_metrics,
-    calibrate_dema_macd, dema_preset, lifecycle_explanation,
+from MK_Benchmark_Relative_v007 import (
+    RelativeConfig, default_benchmark, benchmark_name,
+    compute_relative_analytics, relative_snapshot,
 )
-from MK_DEMA_MACD_HTML_Report_v007 import build_dema_macd_html_report
+from MK_Institutional_Tactical_v007 import (
+    TacticalConfig, run_tactical_strategy, tactical_snapshot,
+)
 
 
 APP_VERSION = "v0.07"
@@ -82,7 +81,7 @@ RANGE_SELECTOR = dict(
     ],
     x=0,
     xanchor="left",
-    y=1.12,
+    y=1.22,
     yanchor="top",
     bgcolor="#FFFFFF",
     activecolor="#E2E8F0",
@@ -132,10 +131,13 @@ def fmt_num(v, d=2):
 
 def _base_layout(fig, title, height=560, ytitle=None):
     fig.update_layout(
-        title=dict(text=title, x=0.01, xanchor="left", font=dict(size=15, color="#0F172A")),
+        title=dict(
+            text=title, x=0.01, xanchor="left", y=0.955, yanchor="top",
+            font=dict(size=15, color="#0F172A"), pad=dict(t=4, b=4)
+        ),
         template="plotly_white",
         height=height,
-        margin=dict(l=52, r=24, t=76, b=38),
+        margin=dict(l=52, r=24, t=116, b=38),
         font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif", size=11, color="#334155"),
         hovermode="x unified",
         legend=dict(orientation="h", y=1.04, x=1, xanchor="right", yanchor="bottom"),
@@ -248,10 +250,10 @@ def make_equity_chart(df, entry_label=""):
         title += f" — {entry_label}"
 
     fig.update_layout(
-        title=dict(text=title, x=0.01, xanchor="left", font=dict(size=15, color="#0F172A")),
+        title=dict(text=title, x=0.01, xanchor="left", y=0.955, yanchor="top", font=dict(size=15, color="#0F172A"), pad=dict(t=4, b=4)),
         template="plotly_white",
         height=660,
-        margin=dict(l=52, r=24, t=92, b=38),
+        margin=dict(l=52, r=24, t=124, b=38),
         font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif", size=11, color="#334155"),
         hovermode="x unified",
         legend=dict(orientation="h", y=1.03, x=1, xanchor="right", yanchor="bottom"),
@@ -388,13 +390,14 @@ def make_strategy_rolling_risk_chart(df, rolling, spec):
     fig.update_layout(
         title=dict(
             text="Trend Strategy Rolling Risk & Market Exposure",
-            x=0.01, xanchor="left",
+            x=0.01, xanchor="left", y=0.955, yanchor="top",
             font=dict(size=16, family="Arial, sans-serif", color="#111827"),
+            pad=dict(t=4, b=4),
         ),
         height=650,
         template="plotly_white",
         hovermode="x unified",
-        margin=dict(l=45, r=45, t=60, b=30),
+        margin=dict(l=45, r=45, t=118, b=30),
         legend=dict(orientation="h", y=1.04, x=0),
         paper_bgcolor="white",
         plot_bgcolor="white",
@@ -489,10 +492,11 @@ def make_nw_overlay_chart(df, nw_cfg):
     fig.update_layout(
         title=dict(
             text=f"Nadaraya-Watson Trend — {nw_cfg.kernel} Kernel | Lookback {nw_cfg.lookback} | h={nw_cfg.effective_bandwidth:g}",
-            x=0.01, xanchor="left", font=dict(size=15, color="#0F172A")
+            x=0.01, xanchor="left", y=0.955, yanchor="top",
+            font=dict(size=15, color="#0F172A"), pad=dict(t=4, b=4)
         ),
         template="plotly_white", height=690, hovermode="x unified",
-        margin=dict(l=45, r=25, t=85, b=35),
+        margin=dict(l=45, r=25, t=126, b=35),
         legend=dict(orientation="h", y=1.03, x=1, xanchor="right", yanchor="bottom"),
         xaxis_rangeslider_visible=False,
         paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
@@ -518,9 +522,9 @@ def make_nw_equity_chart(df):
         line=dict(width=1.2, color="#475569"), fill="tozeroy", fillcolor="rgba(71,85,105,0.10)"
     ), row=2, col=1)
     fig.update_layout(
-        title=dict(text="MK Causal Nadaraya-Watson Strategy vs Buy & Hold", x=0.01, xanchor="left", font=dict(size=15)),
+        title=dict(text="MK Causal Nadaraya-Watson Strategy vs Buy & Hold", x=0.01, xanchor="left", y=0.955, yanchor="top", font=dict(size=15), pad=dict(t=4, b=4)),
         template="plotly_white", height=620, hovermode="x unified",
-        margin=dict(l=45, r=25, t=75, b=30),
+        margin=dict(l=45, r=25, t=118, b=30),
         legend=dict(orientation="h", y=1.03, x=1, xanchor="right"),
         font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif", size=11),
     )
@@ -562,63 +566,103 @@ def make_nw_state_chart(df):
 
 
 
-# ---------------------------- DEMA-MACD charts ----------------------------
-def make_dema_price_chart(df, dema_cfg):
-    fig = go.Figure()
+def make_tactical_envelope_chart(df, benchmark_ticker):
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        row_heights=[0.72,0.28], vertical_spacing=0.07,
+        specs=[[{}],[{"secondary_y":True}]],
+    )
     fig.add_trace(go.Candlestick(
         x=df.index, open=df["AdjOpen"], high=df["AdjHigh"], low=df["AdjLow"], close=df["AdjCloseCalc"],
-        name="Adjusted OHLC", increasing_line_color="#0F766E", decreasing_line_color="#B91C1C",
-    ))
-    for c,label,color,width in [
-        ("DEMAFast","Fast DEMA","#2563EB",1.15),("DEMASlow","Slow DEMA","#7C3AED",1.15),("DEMATrend","Trend DEMA","#334155",1.55)
-    ]:
-        if c in df:
-            fig.add_trace(go.Scatter(x=df.index,y=df[c],mode="lines",name=label,line=dict(color=color,width=width)))
-    buys=df["FirstBuy"].fillna(0).gt(0); sells=df["FirstSell"].fillna(0).gt(0)
-    fig.add_trace(go.Scatter(x=df.index[buys],y=df.loc[buys,"AdjOpen"],mode="markers",name="BUY",marker=dict(symbol="triangle-up",size=13,color="#065F46")))
-    fig.add_trace(go.Scatter(x=df.index[sells],y=df.loc[sells,"AdjOpen"],mode="markers",name="SELL / RISK EXIT",marker=dict(symbol="triangle-down",size=13,color="#991B1B")))
-    if "DEMAReduceMarker" in df:
-        red=pd.to_numeric(df["DEMAReduceMarker"],errors="coerce"); m=red.notna()
-        fig.add_trace(go.Scatter(x=df.index[m],y=red[m],mode="markers",name="REDUCE",marker=dict(symbol="diamond",size=9,color="#B45309")))
-    fig.update_layout(template="plotly_white",height=690,hovermode="x unified",margin=dict(l=45,r=25,t=85,b=35),
-        title=dict(text=f"DEMA-MACD Price Structure | {dema_cfg.fast_length}/{dema_cfg.slow_length}/{dema_cfg.signal_length}",x=.01,font=dict(size=15)),
-        legend=dict(orientation="h",y=1.03,x=1,xanchor="right"),xaxis_rangeslider_visible=False,
-        font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif",size=11))
-    fig.update_xaxes(rangeselector=RANGE_SELECTOR,showgrid=False); fig.update_yaxes(title_text="Adjusted Price",gridcolor="#E2E8F0")
-    return fig
+        name="Adjusted OHLC", increasing_line_color="#334155", decreasing_line_color="#94A3B8",
+        increasing_fillcolor="#FFFFFF", decreasing_fillcolor="#E2E8F0",
+    ), row=1,col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index,y=df["NWUpper"],mode="lines",name="NW Upper Band",
+        line=dict(width=1.0,color="#B45309")
+    ),row=1,col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index,y=df["NWTrend"],mode="lines",name="NW Trend",
+        line=dict(width=1.8,color="#0F172A")
+    ),row=1,col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index,y=df["NWLower"],mode="lines",name="NW Lower Band",
+        line=dict(width=1.0,color="#64748B")
+    ),row=1,col=1)
 
+    ua=df["NWCrossAboveUpper"].fillna(False)
+    ur=df["NWReenterBelowUpper"].fillna(False)
+    lb=df["NWCrossBelowLower"].fillna(False)
+    fig.add_trace(go.Scatter(
+        x=df.index[ua],y=df.loc[ua,"AdjCloseCalc"],mode="markers",name="Upper Band Cross — Early De-risk",
+        marker=dict(symbol="triangle-down",size=11,color="#B45309")
+    ),row=1,col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index[ur],y=df.loc[ur,"AdjCloseCalc"],mode="markers",name="Upper Band Re-entry — Confirmed Exhaustion",
+        marker=dict(symbol="triangle-down",size=13,color="#7C2D12")
+    ),row=1,col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index[lb],y=df.loc[lb,"AdjCloseCalc"],mode="markers",name="Lower Band Break",
+        marker=dict(symbol="x",size=10,color="#991B1B")
+    ),row=1,col=1)
 
-def make_dema_oscillator_chart(df):
-    fig=make_subplots(rows=2,cols=1,shared_xaxes=True,row_heights=[.62,.38],vertical_spacing=.07)
-    fig.add_trace(go.Bar(x=df.index,y=df["DEMAHistogram"],name="DEMA Histogram",marker_color="#94A3B8"),row=1,col=1)
-    fig.add_trace(go.Scatter(x=df.index,y=df["DEMAMACD"],mode="lines",name="DEMA MACD",line=dict(width=1.4,color="#0F172A")),row=1,col=1)
-    fig.add_trace(go.Scatter(x=df.index,y=df["DEMASignal"],mode="lines",name="Signal",line=dict(width=1.2,color="#B45309")),row=1,col=1)
-    fig.add_hline(y=0,line_width=1,line_color="#CBD5E1",row=1,col=1)
-    fig.add_trace(go.Scatter(x=df.index,y=df["BuyScore"],mode="lines",name="BUY Score",line=dict(width=1.4,color="#0F766E")),row=2,col=1)
-    fig.add_trace(go.Scatter(x=df.index,y=df["SellScore"],mode="lines",name="SELL Score",line=dict(width=1.4,color="#B91C1C")),row=2,col=1)
-    fig.update_layout(template="plotly_white",height=650,hovermode="x unified",margin=dict(l=45,r=25,t=75,b=40),title=dict(text="DEMA-MACD Momentum & Confirmation Scores",x=.01,font=dict(size=15)),legend=dict(orientation="h",y=1.03,x=1,xanchor="right"))
-    fig.update_yaxes(title_text="Momentum",row=1,col=1,gridcolor="#E2E8F0"); fig.update_yaxes(title_text="Score",range=[0,100],row=2,col=1,gridcolor="#E2E8F0")
+    fig.add_trace(go.Scatter(
+        x=df.index,y=df["ResidualDriftZ"],mode="lines",name=f"Beta-Adjusted Relative Drift Z vs {benchmark_ticker}",
+        line=dict(width=1.5,color="#1D4ED8")
+    ),row=2,col=1,secondary_y=False)
+    fig.add_trace(go.Scatter(
+        x=df.index,y=df["RelativeVolume"],mode="lines",name="Relative Volume",
+        line=dict(width=1.0,color="#64748B",dash="dot")
+    ),row=2,col=1,secondary_y=True)
+
+    if tactical_cfg is not None:
+        for y in [tactical_cfg.weak_z,tactical_cfg.strong_z,tactical_cfg.extreme_z,
+                  -tactical_cfg.weak_z,-tactical_cfg.strong_z,-tactical_cfg.extreme_z]:
+            fig.add_hline(y=y,line_width=0.7,line_dash="dot",line_color="#CBD5E1",row=2,col=1)
+
+    fig.update_layout(
+        title=dict(text="Institutional Tactical Envelope + Benchmark Relative Deviation",
+                   x=0.01,xanchor="left",y=0.955,yanchor="top",font=dict(size=15),pad=dict(t=4,b=4)),
+        template="plotly_white",height=760,hovermode="x unified",
+        margin=dict(l=50,r=35,t=125,b=35),
+        legend=dict(orientation="h",y=1.035,x=1,xanchor="right"),
+        font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif",size=11,color="#334155"),
+        xaxis_rangeslider_visible=False,
+    )
+    fig.update_yaxes(title_text="Adjusted Price / NW Envelope",row=1,col=1,gridcolor="#E2E8F0")
+    fig.update_yaxes(title_text="Relative Drift Z",row=2,col=1,secondary_y=False,gridcolor="#E2E8F0")
+    fig.update_yaxes(title_text="RVOL",row=2,col=1,secondary_y=True)
     fig.update_xaxes(rangeselector=RANGE_SELECTOR,rangeslider=dict(visible=False),row=1,col=1)
     return fig
 
 
-def make_dema_equity_chart(df):
-    fig=make_subplots(rows=2,cols=1,shared_xaxes=True,row_heights=[.78,.22],vertical_spacing=.06)
-    fig.add_trace(go.Scatter(x=df.index,y=df["Portfolio"],mode="lines",name="DEMA-MACD Strategy",line=dict(width=1.8,color="#0F172A")),row=1,col=1)
-    fig.add_trace(go.Scatter(x=df.index,y=df["BuyHold"],mode="lines",name="Buy & Hold",line=dict(width=1.3,color="#64748B",dash="dot")),row=1,col=1)
-    fig.add_trace(go.Scatter(x=df.index,y=df["DEMAExposure"],mode="lines",name="Exposure",line=dict(width=1.2,color="#475569"),fill="tozeroy",fillcolor="rgba(71,85,105,.10)"),row=2,col=1)
-    fig.update_layout(template="plotly_white",height=600,hovermode="x unified",margin=dict(l=45,r=25,t=75,b=35),title=dict(text="DEMA-MACD Strategy vs Buy & Hold",x=.01,font=dict(size=15)),legend=dict(orientation="h",y=1.03,x=1,xanchor="right"))
-    fig.update_yaxes(title_text="Portfolio Value",row=1,col=1,gridcolor="#E2E8F0"); fig.update_yaxes(title_text="Exposure",tickformat=".0%",range=[0,1.02],row=2,col=1)
+def make_tactical_portfolio_chart(df):
+    fig=make_subplots(rows=2,cols=1,shared_xaxes=True,row_heights=[0.76,0.24],vertical_spacing=0.06)
+    fig.add_trace(go.Scatter(
+        x=df.index,y=df["TacticalPortfolio"],mode="lines",name="Institutional Tactical Portfolio",
+        line=dict(width=1.8,color="#0F172A")
+    ),row=1,col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index,y=df["BuyHold"],mode="lines",name="Buy & Hold",
+        line=dict(width=1.2,color="#64748B",dash="dot")
+    ),row=1,col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index,y=df["TacticalTargetExposure"],mode="lines",name="Target Exposure",
+        line=dict(width=1.3,color="#334155"),fill="tozeroy",fillcolor="rgba(51,65,85,.10)"
+    ),row=2,col=1)
+    fig.update_layout(
+        title=dict(text="Institutional Tactical Portfolio & Staged Exposure",
+                   x=.01,xanchor="left",y=.955,yanchor="top",font=dict(size=15),pad=dict(t=4,b=4)),
+        template="plotly_white",height=620,hovermode="x unified",
+        margin=dict(l=50,r=30,t=118,b=35),
+        legend=dict(orientation="h",y=1.03,x=1,xanchor="right"),
+        font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif",size=11,color="#334155"),
+    )
+    fig.update_yaxes(title_text="Portfolio Value",row=1,col=1,gridcolor="#E2E8F0")
+    fig.update_yaxes(title_text="Target Exposure",tickformat=".0%",range=[0,1.02],row=2,col=1)
+    fig.update_xaxes(rangeselector=RANGE_SELECTOR,rangeslider=dict(visible=False),row=1,col=1)
     return fig
 
-
-def make_dema_calibration_chart(calibration):
-    rank=calibration.get("ranking",pd.DataFrame())
-    if rank is None or rank.empty: return go.Figure()
-    top=rank.head(30).copy(); top["Parameter Set"]=top.apply(lambda r:f"{int(r.Fast)}/{int(r.Slow)}/{int(r.Signal)} | B{int(r.BuyThreshold)} S{int(r.SellThreshold)}",axis=1)
-    fig=go.Figure(go.Bar(x=top["InstitutionalScore"],y=top["Parameter Set"],orientation="h",marker_color="#475569"))
-    fig.update_layout(template="plotly_white",height=max(460,22*len(top)),title=dict(text="Calibration Robustness Ranking — Train + Validation Selection; OOS Untouched",x=.01,font=dict(size=15)),margin=dict(l=150,r=25,t=70,b=40),yaxis=dict(autorange="reversed"),xaxis_title="Institutional Robustness Score")
-    return fig
 
 # ---------------------------- Header ----------------------------
 st.title("MK Trend Following Analytics Engine")
@@ -661,8 +705,10 @@ with st.sidebar:
     with c2:
         end = st.date_input("End Date", value=pd.Timestamp.today().date())
 
-    interval_label = st.selectbox("Frequency", ["Daily", "Weekly", "Monthly"], index=0)
-    interval = {"Daily":"1d", "Weekly":"1wk", "Monthly":"1mo"}[interval_label]
+    interval_label = st.selectbox("Frequency", ["15 Minutes", "Daily", "Weekly", "Monthly"], index=1)
+    interval = {"15 Minutes":"15m", "Daily":"1d", "Weekly":"1wk", "Monthly":"1mo"}[interval_label]
+    if interval == "15m":
+        st.caption("Yahoo 15-minute mode: strict maximum historical span is 60 days. The engine will not silently truncate an older request.")
 
     strategy_label = st.selectbox("Strategy", ["ATR Trailing Stop", "ATR", "Bollinger"], index=0)
     strategy_name = {"ATR":"ATR", "Bollinger":"BOLLINGER", "ATR Trailing Stop":"ATR_TRAILING_STOP"}[strategy_label]
@@ -691,7 +737,7 @@ with st.sidebar:
         entry_horizon = st.selectbox(
             "Entry Breakout Horizon",
             horizon_options(interval),
-            index=horizon_options(interval).index("12M"),
+            index=(horizon_options(interval).index("12M") if "12M" in horizon_options(interval) else 2),
             help="BUY requires the prior adjusted close to reach the rolling maximum over this horizon.",
         )
         max_buy_weeks, entry_gate_label = resolve_entry_lookback(
@@ -788,45 +834,74 @@ with st.sidebar:
         help="MK strategy risk filter: do not initiate a new long when price is already beyond the upper residual envelope.",
     )
 
+
     st.divider()
-    st.subheader("DEMA-MACD Confirmation Engine")
-    dema_enabled = st.toggle("Enable DEMA-MACD BUY / SELL Layer", value=True,
-        help="Independent causal confirmation engine with BUY WATCH, BUY, HOLD, SELL WATCH, REDUCE, SELL and RISK EXIT lifecycle states.")
-    dema_preset_name = st.selectbox("DEMA-MACD Research Preset",
-        ["MK Institutional Balanced","Reference-Style Continuation","MK Fast Confirmation","MK Smooth Position","Custom"],
-        index=0, disabled=not dema_enabled)
-    _dema_i0,_dema_s0=dema_preset(dema_preset_name)
-    if dema_preset_name == "Custom":
-        dc1,dc2,dc3=st.columns(3)
-        dema_fast=dc1.number_input("Fast",min_value=2,value=12,step=1,disabled=not dema_enabled)
-        dema_slow=dc2.number_input("Slow",min_value=3,value=26,step=1,disabled=not dema_enabled)
-        dema_signal=dc3.number_input("Signal",min_value=1,value=9,step=1,disabled=not dema_enabled)
-        dema_buy_thr=st.slider("BUY Confirmation Score",0,100,65,1,disabled=not dema_enabled)
-        dema_watch_thr=st.slider("SELL WATCH Score",0,80,35,1,disabled=not dema_enabled)
-        dema_reduce_thr=st.slider("REDUCE Score",int(dema_watch_thr),90,max(50,int(dema_watch_thr)),1,disabled=not dema_enabled)
-        dema_sell_thr=st.slider("SELL Confirmation Score",int(dema_reduce_thr),100,max(65,int(dema_reduce_thr)),1,disabled=not dema_enabled)
-        dema_sell_persist=st.number_input("SELL Persistence Bars",min_value=1,value=2,step=1,disabled=not dema_enabled)
-        dema_cooldown=st.number_input("Re-entry Cooldown Bars",min_value=0,value=3,step=1,disabled=not dema_enabled)
-        dema_atr_mult=st.number_input("ATR Risk-Exit Multiplier",min_value=.5,value=3.0,step=.1,disabled=not dema_enabled)
-        dema_hard_stop=st.number_input("Hard Stop (%)",min_value=1.0,max_value=50.0,value=12.0,step=.5,disabled=not dema_enabled)/100.0
+    st.subheader("Institutional Tactical Layer")
+    tactical_enabled = st.toggle(
+        "Enable Primary Tactical Decision Engine",
+        value=True,
+        help="Nadaraya-Watson envelope excursions + benchmark-relative deviation + staged exposure reduction.",
+    )
+
+    auto_benchmark = default_benchmark(ticker)
+    benchmark_mode = st.selectbox(
+        "Benchmark Selection",
+        ["Auto Mapped", "Manual Yahoo Benchmark"],
+        index=0,
+        disabled=not tactical_enabled,
+    )
+    if benchmark_mode == "Auto Mapped":
+        benchmark_ticker = auto_benchmark or ""
+        if benchmark_ticker:
+            st.caption(f"Primary benchmark: **{benchmark_name(benchmark_ticker)}** (`{benchmark_ticker}`)")
+        else:
+            st.warning("No curated benchmark mapping exists for this ticker. Select Manual Yahoo Benchmark.")
     else:
-        dema_fast,dema_slow,dema_signal=_dema_i0.fast_length,_dema_i0.slow_length,_dema_i0.signal_length
-        dema_buy_thr=_dema_s0.buy_threshold; dema_watch_thr=_dema_s0.sell_watch_threshold; dema_reduce_thr=_dema_s0.reduce_threshold; dema_sell_thr=_dema_s0.sell_threshold
-        dema_sell_persist=_dema_s0.sell_persistence_bars; dema_cooldown=_dema_s0.cooldown_bars; dema_atr_mult=_dema_s0.atr_trailing_multiplier; dema_hard_stop=_dema_s0.hard_stop_pct
-        if dema_enabled: st.caption(f"DEMA {dema_fast}/{dema_slow}/{dema_signal} | BUY ≥ {dema_buy_thr:.0f} | WATCH/REDUCE/SELL {dema_watch_thr:.0f}/{dema_reduce_thr:.0f}/{dema_sell_thr:.0f}")
-    dema_execute_reduce=st.toggle("Execute REDUCE as Partial Sale",value=False,disabled=not dema_enabled,
-        help="Off by default: REDUCE remains advisory. When enabled, the new DEMA layer sells the configured fraction at next adjusted open. Legacy engine is never changed.")
-    dema_reduce_fraction=st.slider("REDUCE Fraction",10,90,50,5,disabled=(not dema_enabled) or (not dema_execute_reduce))/100.0
-    dema_calibrate=st.toggle("Run Calibration + Walk-Forward",value=False,disabled=not dema_enabled,
-        help="Parameter search uses train/validation selection and leaves a final OOS holdout untouched.")
-    dema_grid=st.selectbox("Calibration Grid",["Focused","Balanced","Deep"],index=0,disabled=(not dema_enabled) or (not dema_calibrate))
-    dema_folds=st.number_input("Walk-Forward Folds",min_value=1,max_value=6,value=3,step=1,disabled=(not dema_enabled) or (not dema_calibrate))
+        benchmark_ticker = st.text_input("Benchmark Yahoo Ticker", value=(auto_benchmark or "XU100.IS")).strip().upper()
+
+    sensitivity = st.selectbox(
+        "Tactical Sensitivity",
+        ["High Sensitivity", "Institutional Balanced", "Conservative"],
+        index=0,
+        disabled=not tactical_enabled,
+    )
+    sensitivity_map = {
+        "High Sensitivity": dict(weak=1.25,strong=1.75,extreme=2.5,vol=1.35),
+        "Institutional Balanced": dict(weak=1.5,strong=2.0,extreme=3.0,vol=1.5),
+        "Conservative": dict(weak=2.0,strong=2.5,extreme=3.5,vol=1.75),
+    }
+    _sens = sensitivity_map[sensitivity]
+
+    if interval == "15m":
+        default_beta, default_drift = 40, 8
+    elif interval == "1d":
+        default_beta, default_drift = 60, 10
+    elif interval == "1wk":
+        default_beta, default_drift = 26, 4
+    else:
+        default_beta, default_drift = 12, 3
+
+    rc1, rc2 = st.columns(2)
+    with rc1:
+        relative_beta_window = st.number_input(
+            "Relative Beta Window", min_value=10, value=int(default_beta), step=1,
+            disabled=not tactical_enabled,
+        )
+    with rc2:
+        relative_drift_horizon = st.number_input(
+            "Relative Drift Horizon", min_value=1, value=int(default_drift), step=1,
+            disabled=not tactical_enabled,
+        )
+    st.caption(
+        "Primary tactical hierarchy: upper-band excursion → early trim; upper-band re-entry / bearish reversal → deeper reduction; "
+        "benchmark-relative breakdown → forced de-risking; lower-band recovery + bullish confirmation → staged re-entry."
+    )
 
     run_clicked = st.button("RUN ANALYSIS", type="primary", use_container_width=True)
 
 
 # ---------------------------- State ----------------------------
-STATE_SCHEMA_VERSION = 4
+STATE_SCHEMA_VERSION = 3
 _previous_schema = st.session_state.get("_state_schema_version")
 if _previous_schema != STATE_SCHEMA_VERSION:
     # Clear only computed analysis objects from an older deployed code schema.
@@ -835,11 +910,10 @@ if _previous_schema != STATE_SCHEMA_VERSION:
         "result", "summary", "config", "raw", "decision", "trades", "trade_stats",
         "ticker", "instrument_name", "market", "group", "interval", "interval_label",
         "entry_mode", "entry_gate_label", "entry_lookback",
+        "tactical_enabled","benchmark_ticker","benchmark_market","relative_config","relative_result",
+        "relative_snapshot","tactical_config","tactical_result","tactical_snapshot","tactical_sensitivity",
         "nw_enabled", "nw_result", "nw_indicator", "nw_config", "nw_strategy_config",
         "nw_summary", "nw_decision", "nw_trades", "nw_trade_stats", "nw_preset",
-        "dema_enabled", "dema_result", "dema_indicator", "dema_config", "dema_strategy_config",
-        "dema_summary", "dema_decision", "dema_trades", "dema_trade_stats", "dema_events",
-        "dema_exit_detail", "dema_exit_summary", "dema_calibration", "dema_preset",
     ]:
         st.session_state.pop(_k, None)
     st.session_state["_state_schema_version"] = STATE_SCHEMA_VERSION
@@ -849,9 +923,6 @@ for key, default in {
     "decision": None, "trades": None, "trade_stats": None,
     "nw_result": None, "nw_indicator": None, "nw_config": None, "nw_strategy_config": None,
     "nw_summary": None, "nw_decision": None, "nw_trades": None, "nw_trade_stats": None,
-    "dema_result": None, "dema_indicator": None, "dema_config": None, "dema_strategy_config": None,
-    "dema_summary": None, "dema_decision": None, "dema_trades": None, "dema_trade_stats": None,
-    "dema_events": None, "dema_exit_detail": None, "dema_exit_summary": None, "dema_calibration": None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -862,6 +933,15 @@ if run_clicked:
         st.stop()
     if start >= end:
         st.error("End Date must be later than Start Date.")
+        st.stop()
+    if interval == "15m" and (pd.Timestamp(end) - pd.Timestamp(start)).days > 59:
+        st.error(
+            "STRICT INTRADAY DATA STOP — Yahoo Finance 15-minute history cannot extend beyond the last 60 days. "
+            "Reduce the requested date span; the engine will not silently truncate or substitute data."
+        )
+        st.stop()
+    if tactical_enabled and not benchmark_ticker:
+        st.error("BENCHMARK GOVERNANCE STOP — Primary Tactical Layer requires an explicit Yahoo benchmark ticker.")
         st.stop()
 
     cfg = EngineConfig(
@@ -915,32 +995,34 @@ if run_clicked:
                 nw_cfg = nw_scfg = nw_indicator = nw_result = None
                 nw_summary = nw_decision = nw_trades = nw_tstats = None
 
-            if dema_enabled:
-                base_i,base_s=dema_preset(dema_preset_name)
-                dema_cfg=replace(base_i,
-                    fast_length=int(dema_fast),slow_length=int(dema_slow),signal_length=int(dema_signal),
-                    use_nw_filter=bool(base_i.use_nw_filter and nw_enabled),minimum_observations=cfg.minimum_observations)
-                dema_scfg=replace(base_s,
-                    initial_capital=float(initial_capital),buy_threshold=float(dema_buy_thr),
-                    sell_watch_threshold=float(dema_watch_thr),reduce_threshold=float(dema_reduce_thr),sell_threshold=float(dema_sell_thr),
-                    sell_persistence_bars=int(dema_sell_persist),cooldown_bars=int(dema_cooldown),
-                    atr_trailing_multiplier=float(dema_atr_mult),hard_stop_pct=float(dema_hard_stop),
-                    execute_reduce=bool(dema_execute_reduce),reduce_fraction=float(dema_reduce_fraction))
-                dema_indicator=compute_dema_macd(result,dema_cfg,nw_indicator if nw_enabled else None)
-                dema_result=run_dema_macd_strategy(result,dema_indicator,dema_scfg)
-                dema_summary=performance_summary(dema_result,initial_capital=dema_scfg.initial_capital)
-                dema_decision=dema_decision_snapshot(dema_result,dema_scfg)
-                dema_trades=dema_trade_ledger(dema_result); dema_tstats=trade_statistics(dema_trades)
-                dema_events=dema_event_ledger(dema_result)
-                dema_exit_detail,dema_exit_summary=exit_quality_metrics(dema_result)
-                if dema_calibrate:
-                    dema_calibration=calibrate_dema_macd(result,dema_cfg,dema_scfg,nw_indicator if nw_enabled else None,
-                        DEMACalibrationConfig(grid_depth=dema_grid,walk_forward_folds=int(dema_folds)))
-                else:
-                    dema_calibration=None
+            if tactical_enabled:
+                if not nw_enabled or nw_result is None:
+                    raise ValueError("Institutional Tactical Layer requires the Nadaraya-Watson layer to be enabled.")
+                benchmark_market = YahooFinanceAdapter.fetch(
+                    ticker=benchmark_ticker, start=str(start), end=str(end), interval=interval,
+                    minimum_observations=max(30, int(relative_beta_window) + int(relative_drift_horizon) + 3),
+                )
+                rel_cfg = RelativeConfig(
+                    beta_window=int(relative_beta_window),
+                    drift_horizon=int(relative_drift_horizon),
+                    weak_z=float(_sens["weak"]),
+                    strong_z=float(_sens["strong"]),
+                    extreme_z=float(_sens["extreme"]),
+                )
+                relative_result = compute_relative_analytics(nw_result, benchmark_market, rel_cfg)
+                rel_snapshot = relative_snapshot(relative_result, rel_cfg)
+                tactical_cfg = TacticalConfig(
+                    weak_z=float(_sens["weak"]),
+                    strong_z=float(_sens["strong"]),
+                    extreme_z=float(_sens["extreme"]),
+                    volume_climax=float(_sens["vol"]),
+                    initial_capital=float(initial_capital),
+                )
+                tactical_result = run_tactical_strategy(nw_result, relative_result, tactical_cfg)
+                tactical_decision = tactical_snapshot(tactical_result, tactical_cfg)
             else:
-                dema_cfg=dema_scfg=dema_indicator=dema_result=None
-                dema_summary=dema_decision=dema_trades=dema_tstats=dema_events=dema_exit_detail=dema_exit_summary=dema_calibration=None
+                benchmark_market = rel_cfg = relative_result = rel_snapshot = None
+                tactical_cfg = tactical_result = tactical_decision = None
 
         st.session_state.result = result
         st.session_state.summary = summary
@@ -968,20 +1050,16 @@ if run_clicked:
         st.session_state.nw_trades = nw_trades
         st.session_state.nw_trade_stats = nw_tstats
         st.session_state.nw_preset = nw_preset
-        st.session_state.dema_enabled = bool(dema_enabled)
-        st.session_state.dema_result = dema_result
-        st.session_state.dema_indicator = dema_indicator
-        st.session_state.dema_config = dema_cfg
-        st.session_state.dema_strategy_config = dema_scfg
-        st.session_state.dema_summary = dema_summary
-        st.session_state.dema_decision = dema_decision
-        st.session_state.dema_trades = dema_trades
-        st.session_state.dema_trade_stats = dema_tstats
-        st.session_state.dema_events = dema_events
-        st.session_state.dema_exit_detail = dema_exit_detail
-        st.session_state.dema_exit_summary = dema_exit_summary
-        st.session_state.dema_calibration = dema_calibration
-        st.session_state.dema_preset = dema_preset_name
+        st.session_state.tactical_enabled = bool(tactical_enabled)
+        st.session_state.benchmark_ticker = benchmark_ticker
+        st.session_state.benchmark_market = benchmark_market
+        st.session_state.relative_config = rel_cfg
+        st.session_state.relative_result = relative_result
+        st.session_state.relative_snapshot = rel_snapshot
+        st.session_state.tactical_config = tactical_cfg
+        st.session_state.tactical_result = tactical_result
+        st.session_state.tactical_snapshot = tactical_decision
+        st.session_state.tactical_sensitivity = sensitivity
     except (DataIntegrityError, MarketDataError) as exc:
         st.error(f"STRICT DATA STOP — {exc}")
         st.stop()
@@ -1016,20 +1094,16 @@ nw_decision = st.session_state.get("nw_decision")
 nw_trades = st.session_state.get("nw_trades")
 nw_tstats = st.session_state.get("nw_trade_stats")
 nw_preset_used = st.session_state.get("nw_preset", "")
-dema_enabled_used = bool(st.session_state.get("dema_enabled", False))
-dema_result = st.session_state.get("dema_result")
-dema_indicator = st.session_state.get("dema_indicator")
-dema_cfg = st.session_state.get("dema_config")
-dema_scfg = st.session_state.get("dema_strategy_config")
-dema_summary = st.session_state.get("dema_summary")
-dema_decision = st.session_state.get("dema_decision")
-dema_trades = st.session_state.get("dema_trades")
-dema_tstats = st.session_state.get("dema_trade_stats")
-dema_events = st.session_state.get("dema_events")
-dema_exit_detail = st.session_state.get("dema_exit_detail")
-dema_exit_summary = st.session_state.get("dema_exit_summary") or {}
-dema_calibration = st.session_state.get("dema_calibration")
-dema_preset_used = st.session_state.get("dema_preset", "")
+tactical_enabled_used = bool(st.session_state.get("tactical_enabled", False))
+benchmark_ticker_used = st.session_state.get("benchmark_ticker")
+benchmark_market = st.session_state.get("benchmark_market")
+rel_cfg = st.session_state.get("relative_config")
+relative_result = st.session_state.get("relative_result")
+rel_snapshot = st.session_state.get("relative_snapshot")
+tactical_cfg = st.session_state.get("tactical_config")
+tactical_result = st.session_state.get("tactical_result")
+tactical_decision = st.session_state.get("tactical_snapshot")
+tactical_sensitivity_used = st.session_state.get("tactical_sensitivity", "")
 
 entry_gate_label_used = st.session_state.get("entry_gate_label", "")
 entry_lookback_state = st.session_state.get("entry_lookback")
@@ -1053,31 +1127,31 @@ st.markdown(f"### {name_used if name_used != 'Manual' else ticker_used}  ·  `{t
 st.caption(f"{market_used} / {group_used}  |  {interval_label_used}  |  {summary['start'].date()} → {summary['end'].date()}  |  Active strategy: {cfg.strategy.replace('_',' ')}")
 
 k1,k2,k3,k4,k5,k6,k7,k8 = st.columns(8)
-k1.metric("Decision", decision["decision"])
-k2.metric("Position", decision["position"].replace(" / LONG", ""))
-k3.metric("Last Adj. Close", fmt_num(result["AdjCloseCalc"].iloc[-1]))
-k4.metric("Price / Stop Gap", fmt_pct(decision["price_stop_gap"]))
-k5.metric("Strategy CAGR", fmt_pct(summary["strategy_cagr"]))
-k6.metric("Buy & Hold CAGR", fmt_pct(summary["buyhold_cagr"]))
-k7.metric("Strategy Max DD", fmt_pct(summary["max_drawdown"]))
-k8.metric("Ann. Volatility", fmt_pct(summary["annualized_volatility"]))
-
-if dema_enabled_used and dema_result is not None and dema_decision is not None:
-    st.markdown("#### DEMA-MACD Confirmation State")
-    dm1,dm2,dm3,dm4,dm5,dm6 = st.columns(6)
-    dm1.metric("DEMA Decision", dema_decision["decision"])
-    dm2.metric("DEMA Position", dema_decision["position"])
-    dm3.metric("BUY Score", f"{dema_decision['buy_score']:.1f}")
-    dm4.metric("SELL Score", f"{dema_decision['sell_score']:.1f}")
-    dm5.metric("DEMA CAGR", fmt_pct(dema_summary["strategy_cagr"]))
-    dm6.metric("DEMA Max DD", fmt_pct(dema_summary["max_drawdown"]))
+if tactical_enabled_used and tactical_decision is not None:
+    k1.metric("PRIMARY Decision", tactical_decision["decision"])
+    k2.metric("Target Exposure", fmt_pct(tactical_decision["target_exposure"]))
+    k3.metric("Last Adj. Close", fmt_num(result["AdjCloseCalc"].iloc[-1]))
+    k4.metric("Relative Drift Z", fmt_num(tactical_decision["relative_z"]))
+    k5.metric("Rolling Beta", fmt_num(tactical_decision["beta"]))
+    k6.metric("NW Envelope Z", fmt_num(tactical_decision["envelope_z"]))
+    k7.metric("Benchmark", benchmark_ticker_used or "—")
+    k8.metric("Legacy Reference", decision["decision"])
+else:
+    k1.metric("Decision", decision["decision"])
+    k2.metric("Position", decision["position"].replace(" / LONG", ""))
+    k3.metric("Last Adj. Close", fmt_num(result["AdjCloseCalc"].iloc[-1]))
+    k4.metric("Price / Stop Gap", fmt_pct(decision["price_stop_gap"]))
+    k5.metric("Strategy CAGR", fmt_pct(summary["strategy_cagr"]))
+    k6.metric("Buy & Hold CAGR", fmt_pct(summary["buyhold_cagr"]))
+    k7.metric("Strategy Max DD", fmt_pct(summary["max_drawdown"]))
+    k8.metric("Ann. Volatility", fmt_pct(summary["annualized_volatility"]))
 
 # ---------------------------- Main tabs ----------------------------
 tabs = st.tabs([
-    "Executive & Decision",
-    "Price & Signals",
+    "Executive & Primary Decision",
+    "Institutional Tactical",
+    "Price & Legacy Signals",
     "Nadaraya-Watson Trend",
-    "DEMA-MACD Confirmation",
     "Strategy vs Buy & Hold",
     "Risk Analytics",
     "Trend Diagnostics",
@@ -1088,6 +1162,33 @@ tabs = st.tabs([
 ])
 
 with tabs[0]:
+    if tactical_enabled_used and tactical_decision is not None:
+        st.markdown(
+            f"""<div class="decision-card">
+                <div class="decision-label">PRIMARY INSTITUTIONAL DECISION</div>
+                <div class="decision-value">{tactical_decision['decision']}</div>
+                <div class="decision-reason">{tactical_decision['rationale']}</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+        p1,p2,p3,p4,p5 = st.columns(5)
+        p1.metric("Target Exposure", fmt_pct(tactical_decision["target_exposure"]))
+        p2.metric("Relative Drift Z", fmt_num(tactical_decision["relative_z"]))
+        p3.metric("NW Envelope Z", fmt_num(tactical_decision["envelope_z"]))
+        p4.metric("Rolling Beta", fmt_num(tactical_decision["beta"]))
+        p5.metric("Relative Volume", fmt_num(tactical_decision["relative_volume"]))
+        st.markdown("#### Primary Decision Causality")
+        st.dataframe(tactical_decision["gates"],use_container_width=True,hide_index=True,height=300)
+        st.caption(tactical_decision["timing_note"])
+        st.markdown(
+            f"<div class='section-note'><b>Benchmark:</b> {benchmark_name(benchmark_ticker_used)} "
+            f"(`{benchmark_ticker_used}`) · <b>Sensitivity:</b> {tactical_sensitivity_used}. "
+            "Legacy ATR/Bollinger logic is retained below only as an audit/reference layer, not as the primary institutional exit decision.</div>",
+            unsafe_allow_html=True,
+        )
+        st.divider()
+        st.markdown("### Legacy Reference / Audit Layer")
+
     left, right = st.columns([1.35, 1])
     with left:
         st.markdown(
@@ -1137,6 +1238,41 @@ with tabs[0]:
     p6.metric("Avg Holding Days", fmt_num(tstats["avg_holding_days"], 0))
 
 with tabs[1]:
+    if not tactical_enabled_used or tactical_result is None:
+        st.info("Institutional Tactical Layer was disabled for this run.")
+    else:
+        st.markdown(
+            "<div class='section-note'><b>Fast tactical objective:</b> do not wait for a remote legacy stop. "
+            "An upside NW-envelope excursion can trigger an immediate staged trim; re-entry below the upper band, "
+            "bearish NW reversal, abnormal relative volume and beta-adjusted benchmark divergence can deepen the reduction. "
+            "Severe relative breakdown or lower-band failure can force a full exit.</div>",
+            unsafe_allow_html=True,
+        )
+        st.plotly_chart(
+            make_tactical_envelope_chart(tactical_result, benchmark_ticker_used),
+            use_container_width=True,config=PLOT_CFG
+        )
+        t1,t2,t3,t4,t5,t6 = st.columns(6)
+        t1.metric("Decision",tactical_decision["decision"])
+        t2.metric("Target Exposure",fmt_pct(tactical_decision["target_exposure"]))
+        t3.metric("Relative Drift Z",fmt_num(tactical_decision["relative_z"]))
+        t4.metric("Rolling Beta",fmt_num(tactical_decision["beta"]))
+        t5.metric("NW Envelope Z",fmt_num(tactical_decision["envelope_z"]))
+        t6.metric("Benchmark",benchmark_ticker_used)
+
+        st.markdown("#### Tactical Gate Matrix")
+        st.dataframe(tactical_decision["gates"],use_container_width=True,hide_index=True,height=300)
+
+        st.markdown("#### Staged Exposure & Capital Path")
+        st.plotly_chart(make_tactical_portfolio_chart(tactical_result),use_container_width=True,config=PLOT_CFG)
+
+        with st.expander("Tactical Action Ledger",expanded=False):
+            cols=["AdjCloseCalc","NWTrend","NWUpper","NWLower","NWEnvelopeZ","ResidualDriftZ",
+                  "RollingBeta","RelativeVolume","TacticalAction","TacticalTargetExposure",
+                  "TacticalExposure","TacticalPortfolio","TacticalRationale"]
+            st.dataframe(tactical_result[cols].sort_index(ascending=False),use_container_width=True,height=560)
+
+with tabs[2]:
     c1, c2 = st.columns([1, 3])
     with c1:
         chart_mode = st.radio("Price display", ["Candlestick", "Adjusted Close Line"], horizontal=False)
@@ -1150,7 +1286,7 @@ with tabs[1]:
         )
     st.plotly_chart(make_price_chart(result, cfg, chart_mode), use_container_width=True, config=PLOT_CFG)
 
-with tabs[2]:
+with tabs[3]:
     if not nw_enabled_used or nw_result is None:
         st.info("Nadaraya-Watson research layer was disabled for this run. Enable it in the sidebar and run the analysis again.")
     else:
@@ -1265,56 +1401,6 @@ with tabs[2]:
             use_container_width=True,
         )
 
-
-with tabs[3]:
-    if not dema_enabled_used or dema_result is None:
-        st.info("DEMA-MACD confirmation layer was disabled for this run. Enable it in the sidebar and run the analysis again.")
-    else:
-        st.markdown("#### Full-Cycle DEMA-MACD BUY / SELL Confirmation")
-        st.markdown(
-            "<div class='section-note'>The reference continuation concept is preserved as an auditable momentum layer, while the MK engine adds a separately calibrated lifecycle. "
-            "SELL is not a simple inverse BUY: deterioration score, persistence, DEMA trend structure, standard MACD confirmation, ADX/regime filters, Nadaraya-Watson context when enabled, ATR trailing risk, hard stop and swing-low breach are evaluated independently. "
-            "Executable actions use the prior completed bar and the next adjusted open.</div>", unsafe_allow_html=True)
-        c1,c2,c3,c4,c5,c6=st.columns(6)
-        c1.metric("Current Decision",dema_decision["decision"]); c2.metric("Position",dema_decision["position"])
-        c3.metric("BUY Score",f"{dema_decision['buy_score']:.1f}"); c4.metric("SELL Score",f"{dema_decision['sell_score']:.1f}")
-        c5.metric("Closed Trades",f"{int((dema_tstats or {}).get('closed_trades',0) or 0)}"); c6.metric("Net Exit Utility",fmt_pct(dema_exit_summary.get("avg_net_exit_utility")))
-        st.plotly_chart(make_dema_price_chart(dema_result,dema_cfg),use_container_width=True,config=PLOT_CFG)
-        left,right=st.columns([1.15,1])
-        with left:
-            st.markdown("##### Current Decision Gates")
-            st.dataframe(dema_decision["gates"],use_container_width=True,hide_index=True,height=390)
-        with right:
-            st.markdown("##### Position Lifecycle")
-            st.dataframe(lifecycle_explanation(),use_container_width=True,hide_index=True,height=390)
-        st.plotly_chart(make_dema_oscillator_chart(dema_result),use_container_width=True,config=PLOT_CFG)
-        st.plotly_chart(make_dema_equity_chart(dema_result),use_container_width=True,config=PLOT_CFG)
-        st.markdown("##### DEMA-MACD Event Ledger")
-        st.dataframe(dema_events.sort_values("Date",ascending=False) if dema_events is not None and not dema_events.empty else pd.DataFrame(),use_container_width=True,hide_index=True,height=430)
-        e1,e2=st.columns(2)
-        with e1:
-            st.markdown("##### DEMA-MACD Trade Ledger")
-            st.dataframe(dema_trades.sort_values("Entry Date",ascending=False) if dema_trades is not None and not dema_trades.empty else pd.DataFrame(),use_container_width=True,hide_index=True,height=430)
-        with e2:
-            st.markdown("##### SELL / Exit Quality")
-            st.dataframe(dema_exit_detail.sort_values("Exit Date",ascending=False) if dema_exit_detail is not None and not dema_exit_detail.empty else pd.DataFrame(),use_container_width=True,hide_index=True,height=430)
-        if dema_calibration:
-            st.markdown("#### Calibration Lab — Robustness Before Peak Return")
-            sp=dema_calibration["splits"]; bp=dema_calibration["best_params"]
-            st.caption(f"Train {sp['train_start'].date()} → {sp['train_end'].date()} | Validation {sp['validation_start'].date()} → {sp['validation_end'].date()} | Untouched OOS {sp['oos_start'].date()} → {sp['oos_end'].date()}")
-            q1,q2,q3,q4,q5=st.columns(5)
-            q1.metric("Best Fast",bp["fast_length"]); q2.metric("Best Slow",bp["slow_length"]); q3.metric("Best Signal",bp["signal_length"]); q4.metric("BUY Threshold",f"{bp['buy_threshold']:.0f}"); q5.metric("SELL Threshold",f"{bp['sell_threshold']:.0f}")
-            st.plotly_chart(make_dema_calibration_chart(dema_calibration),use_container_width=True,config=PLOT_CFG)
-            st.markdown("##### Top Parameter Sets")
-            st.dataframe(dema_calibration["ranking"].head(30),use_container_width=True,hide_index=True,height=520)
-            st.markdown("##### Expanding Walk-Forward")
-            st.dataframe(dema_calibration["walk_forward"],use_container_width=True,hide_index=True,height=360)
-            st.caption(dema_calibration["selection_note"])
-        st.markdown("#### DEMA-MACD Export")
-        dema_html=build_dema_macd_html_report(dema_result,ticker_used,interval_used,dema_decision,dema_summary,dema_tstats,dema_events,dema_trades,dema_exit_detail,dema_exit_summary,dema_calibration)
-        dcol1,dcol2=st.columns(2)
-        dcol1.download_button("Export DEMA-MACD Interactive HTML",dema_html.encode("utf-8"),file_name=f"MK_DEMA_MACD_{ticker_used}_{interval_used}_v007.html",mime="text/html",use_container_width=True)
-        dcol2.download_button("Export DEMA-MACD Ledger CSV",dema_result.reset_index().to_csv(index=False).encode("utf-8"),file_name=f"MK_DEMA_MACD_{ticker_used}_{interval_used}_v007.csv",mime="text/csv",use_container_width=True)
 
 with tabs[4]:
     st.plotly_chart(make_equity_chart(result, entry_gate_label_used), use_container_width=True, config=PLOT_CFG)
@@ -1503,14 +1589,6 @@ with tabs[9]:
 
 with tabs[10]:
     st.markdown("""
-### DEMA-MACD BUY / SELL confirmation layer
-The v0.07 module is an independent Python implementation of the publicly described **DEMA MACD BUY signal confirmation** concept and does not redistribute the Pine source verbatim. The MK extension deliberately separates candidate momentum from portfolio action. The lifecycle is **WAIT / CASH → BUY WATCH → BUY → HOLD → SELL WATCH → REDUCE → SELL / RISK EXIT**.
-
-**SELL governance is asymmetric by design.** A bearish DEMA-MACD event alone does not automatically become an exit. SELL strength aggregates bearish cross recency, negative signal slope, histogram deterioration, standard-MACD confirmation, DEMA trend structure, regime filters and optional NW confirmation. Capital-protection overrides additionally evaluate ATR trailing stop, hard stop and prior swing-low breach. REDUCE is advisory by default and can be enabled as a separately governed partial next-open execution; the validated Legacy Fidelity engine remains all-in/all-out and is never modified.
-
-### Calibration governance
-Calibration searches parameter neighborhoods rather than selecting one historical peak. Candidates are ranked on training data, validation is used only among a train shortlist, a final OOS segment is untouched by selection, and expanding walk-forward folds re-select parameters using prior data only. Parameter-plateau scoring favors stable neighboring configurations.
-
 ### Nadaraya-Watson Trend research layer
 The NW module independently implements the public QuantAlgo methodology: a **one-sided causal endpoint estimator** using only the current and historical bars; Gaussian, Rational Quadratic, Epanechnikov, Triangular, Quartic and Cosine kernels; an effective bandwidth `h = bandwidth × multiplier`; and optional residual bands based on a kernel-weighted mean absolute residual around the current NW estimate.
 
@@ -1548,6 +1626,21 @@ The original workbook is an all-in/all-out trend-following system. Partial posit
 
 ### Legacy Fidelity
 The original Excel mechanics are preserved, including inclusive `OFFSET`-style rolling windows. A nominal ATR parameter of 8 therefore contains 9 observations after saturation, exactly as in the legacy workbook.
+
+### Institutional Tactical Layer
+The primary live decision is no longer the Legacy stop. The tactical hierarchy is:
+1. **NW upper-band cross:** immediate early de-risk / staged trim.
+2. **Upper-band re-entry:** confirms failed upside excursion and deepens the reduction.
+3. **NW reversal / path loss:** directional deterioration.
+4. **Beta-adjusted benchmark residual drift:** identifies abnormal relative weakness or overextension.
+5. **Relative volume:** flags potential intraday climax.
+6. **Staged target exposure:** 100% → 75% → 50% → 25% → 0%, executed at the next adjusted open.
+
+Relative analytics use exact-timestamp inner alignment only. Missing benchmark bars are not filled.
+
+### 15-Minute Intraday Governance
+Yahoo Finance supports 15-minute data, but intraday history is restricted to the most recent 60 days.
+The engine hard-stops requests beyond that horizon instead of silently truncating the analysis.
 
 ### Strict market-data governance
 Yahoo Finance is the only live market-data source in this build. The application does not fabricate observations, fill missing market prices, or switch to another vendor. A failed or incomplete Yahoo response terminates that requested run.
