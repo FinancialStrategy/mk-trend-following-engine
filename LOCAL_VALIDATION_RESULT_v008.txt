@@ -1,0 +1,59 @@
+MK Trend Following Analytics Engine v0.08
+INSTITUTIONAL REBUILD — FINAL VALIDATION
+By Murat Konuklar
+============================================================
+Python compile: PASS
+Client Legacy panels: REMOVED
+Nadaraya-Watson rulebook: PRESENT
+VaR Historical / Parametric Normal / Monte Carlo Bootstrap: PASS
+Risk timeframe-aware annualization: IMPLEMENTED
+Benchmark exact-timestamp risk alignment: IMPLEMENTED
+Trend Diagnostics: NW + benchmark-relative regime + RVOL + exposure only
+Golden Master regression: PASS (code-level only)
+Synthetic market data: NO
+Fallback market data: NO
+Forward fill / backfill: NO
+
+PASS — v0.08 institutional client surface regression
+Client Legacy panels: REMOVED
+NW rulebook: PRESENT
+VaR Historical / Parametric / Monte Carlo: PRESENT
+Trend diagnostics: NW + benchmark-relative only
+
+PASS — v0.08 VaR engine method coverage
+               Method  Confidence      VaR
+           Historical        0.95 0.113202
+    Parametric Normal        0.95 0.124865
+Monte Carlo Bootstrap        0.95 0.136588
+           Historical        0.99 0.255708
+    Parametric Normal        0.99 0.168469
+Monte Carlo Bootstrap        0.99 0.194112
+Monte Carlo scenarios are risk bootstrap scenarios only; no market history was altered.
+
+PASS — Golden Master replication
+Observations: 1,043
+Final Strategy: 1,449,095.223507
+Final Buy & Hold: 747,161.572052
+No live market data was requested by this test.
+
+PASS — Nadaraya-Watson Trend v0.06 validation
+Observations: 1,043
+Kernels validated: 6
+Causal prefix-invariance checkpoints: 4/4
+NW strategy BUY executions: 56
+NW strategy SELL executions: 56
+NW strategy final value: 243,078.79
+NW strategy CAGR: 4.5463%
+NW strategy max drawdown: -45.4593%
+Closed trades: 56
+Synthetic market data: NO
+Fallback source: NO
+Forward/back fill of market prices: NO
+
+PASS — Institutional Tactical Engine v0.07 structural validation
+Real legacy observations: 1,043
+NW upper-band crosses detected: 86
+NW upper-band re-entries detected: 86
+Allowed target-exposure ladder: [0.0, 0.25, 0.5, 0.75, 1.0]
+Latest structural decision: HOLD
+No synthetic market observations, no fallback provider, no forward/back fill.

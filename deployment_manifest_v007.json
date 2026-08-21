@@ -1,0 +1,21 @@
+{
+  "project": "MK Trend Following Analytics Engine",
+  "version": "v0.07",
+  "author": "Murat Konuklar",
+  "primary_decision_engine": "MK Institutional Tactical",
+  "legacy_role": "audit/reference only",
+  "intraday_15m": true,
+  "yahoo_intraday_max_days": 60,
+  "benchmark_relative": true,
+  "staged_exposure": [
+    1.0,
+    0.75,
+    0.5,
+    0.25,
+    0.0
+  ],
+  "synthetic_market_data": false,
+  "fallback_market_data": false,
+  "forward_fill": false,
+  "backfill": false
+}

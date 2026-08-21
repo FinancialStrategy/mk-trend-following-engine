@@ -26,12 +26,14 @@ from MK_Trend_Following_Universe_v002 import (
     instruments_for,
     flat_universe_rows,
 )
-from MK_Trend_Following_Risk_Analytics_v004 import (
+from MK_Institutional_Risk_Analytics_v008 import (
+    VaRConfig,
     rolling_window_options,
     rolling_risk_frame,
     risk_state_snapshot,
     validate_underlying_risk_dynamics,
     cash_regimes,
+    build_var_table,
 )
 from MK_Trend_Following_Entry_Gate_v005 import (
     horizon_options,
@@ -62,7 +64,7 @@ from MK_Institutional_Tactical_v007 import (
 )
 
 
-APP_VERSION = "v0.07"
+APP_VERSION = "v0.08"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -278,18 +280,6 @@ def make_drawdown_chart(df):
     fig.add_trace(go.Scatter(x=df.index, y=bhdd, mode="lines", name="Buy & Hold Drawdown", line=dict(width=1.1, color="#64748B")))
     _base_layout(fig, "Drawdown and Capital Preservation", 500, "Drawdown")
     fig.update_yaxes(tickformat=".0%")
-    fig.update_layout(xaxis=dict(rangeselector=RANGE_SELECTOR, rangeslider=dict(visible=False)))
-    return fig
-
-
-def make_trend_diagnostics(df):
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["AdjCloseCalc"], mode="lines", name="Adjusted Close", line=dict(width=1.2, color="#0F172A")))
-    fig.add_trace(go.Scatter(x=df.index, y=df["MaxPrice"], mode="lines", name="Rolling Max", line=dict(width=1.0, color="#64748B", dash="dot")))
-    fig.add_trace(go.Scatter(x=df.index, y=df["ATR_Stop"], mode="lines", name="ATR Stop", line=dict(width=1.0, color="#7C3AED")))
-    fig.add_trace(go.Scatter(x=df.index, y=df["LowerBollinger"], mode="lines", name="Lower Bollinger", line=dict(width=1.0, color="#2563EB")))
-    fig.add_trace(go.Scatter(x=df.index, y=df["ATRTrailingStop"], mode="lines", name="ATR Trailing Stop", line=dict(width=1.5, color="#B45309")))
-    _base_layout(fig, "Trend Diagnostics — All Legacy Thresholds", 590, "Adjusted Price / Threshold")
     fig.update_layout(xaxis=dict(rangeselector=RANGE_SELECTOR, rangeslider=dict(visible=False)))
     return fig
 
@@ -664,6 +654,104 @@ def make_tactical_portfolio_chart(df):
     return fig
 
 
+def make_primary_price_chart(df, ticker_label):
+    """Client-facing chart: price + NW/tactical information only."""
+    source_df = tactical_result if tactical_result is not None else (nw_result if nw_result is not None else df)
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=source_df.index, open=source_df["AdjOpen"], high=source_df["AdjHigh"],
+        low=source_df["AdjLow"], close=source_df["AdjCloseCalc"], name="Adjusted OHLC",
+        increasing_line_color="#334155", decreasing_line_color="#94A3B8",
+        increasing_fillcolor="#FFFFFF", decreasing_fillcolor="#E2E8F0",
+    ))
+    if "NWTrend" in source_df.columns:
+        fig.add_trace(go.Scatter(x=source_df.index,y=source_df["NWTrend"],mode="lines",name="Nadaraya-Watson Trend",line=dict(width=1.8,color="#0F172A")))
+        fig.add_trace(go.Scatter(x=source_df.index,y=source_df["NWUpper"],mode="lines",name="NW Upper Band",line=dict(width=1.0,color="#B45309")))
+        fig.add_trace(go.Scatter(x=source_df.index,y=source_df["NWLower"],mode="lines",name="NW Lower Band",line=dict(width=1.0,color="#64748B")))
+    if "NWCrossAboveUpper" in source_df.columns:
+        m=source_df["NWCrossAboveUpper"].fillna(False)
+        fig.add_trace(go.Scatter(x=source_df.index[m],y=source_df.loc[m,"AdjCloseCalc"],mode="markers",name="Upper Band Cross — Early De-risk",marker=dict(symbol="triangle-down",size=11,color="#B45309")))
+    if "NWReenterBelowUpper" in source_df.columns:
+        m=source_df["NWReenterBelowUpper"].fillna(False)
+        fig.add_trace(go.Scatter(x=source_df.index[m],y=source_df.loc[m,"AdjCloseCalc"],mode="markers",name="Upper Band Re-entry — Confirmed Exhaustion",marker=dict(symbol="triangle-down",size=13,color="#7C2D12")))
+    if "NWCrossBelowLower" in source_df.columns:
+        m=source_df["NWCrossBelowLower"].fillna(False)
+        fig.add_trace(go.Scatter(x=source_df.index[m],y=source_df.loc[m,"AdjCloseCalc"],mode="markers",name="Lower Band Break",marker=dict(symbol="x",size=10,color="#991B1B")))
+    fig.update_layout(
+        title=dict(text=f"{ticker_label} — Primary Price Structure & Tactical Signals",x=.01,xanchor="left",y=.955,yanchor="top",font=dict(size=15,color="#0F172A"),pad=dict(t=4,b=4)),
+        template="plotly_white",height=680,hovermode="x unified",margin=dict(l=48,r=25,t=122,b=35),
+        legend=dict(orientation="h",y=1.035,x=1,xanchor="right"),
+        font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif",size=11,color="#334155"),
+        xaxis_rangeslider_visible=False,paper_bgcolor="#FFFFFF",plot_bgcolor="#FFFFFF",
+    )
+    fig.update_xaxes(rangeselector=RANGE_SELECTOR,showgrid=False)
+    fig.update_yaxes(title_text="Adjusted Price",gridcolor="#E2E8F0")
+    return fig
+
+
+
+def make_institutional_trend_diagnostics(df, benchmark_ticker, tactical_cfg):
+    fig=make_subplots(
+        rows=3,cols=1,shared_xaxes=True,
+        row_heights=[0.56,0.24,0.20],vertical_spacing=0.055,
+        specs=[[{}],[{"secondary_y":True}],[{"secondary_y":True}]],
+    )
+    fig.add_trace(go.Scatter(x=df.index,y=df["AdjCloseCalc"],mode="lines",name="Adjusted Close",line=dict(width=1.4,color="#0F172A")),row=1,col=1)
+    fig.add_trace(go.Scatter(x=df.index,y=df["NWTrend"],mode="lines",name="NW Trend",line=dict(width=1.8,color="#334155")),row=1,col=1)
+    fig.add_trace(go.Scatter(x=df.index,y=df["NWUpper"],mode="lines",name="NW Upper Band",line=dict(width=1.0,color="#B45309")),row=1,col=1)
+    fig.add_trace(go.Scatter(x=df.index,y=df["NWLower"],mode="lines",name="NW Lower Band",line=dict(width=1.0,color="#64748B")),row=1,col=1)
+    ua=df["NWCrossAboveUpper"].fillna(False); ur=df["NWReenterBelowUpper"].fillna(False); lb=df["NWCrossBelowLower"].fillna(False)
+    fig.add_trace(go.Scatter(x=df.index[ua],y=df.loc[ua,"AdjCloseCalc"],mode="markers",name="Upper Band Cross",marker=dict(symbol="triangle-down",size=10,color="#B45309")),row=1,col=1)
+    fig.add_trace(go.Scatter(x=df.index[ur],y=df.loc[ur,"AdjCloseCalc"],mode="markers",name="Upper Band Re-entry",marker=dict(symbol="triangle-down",size=12,color="#7C2D12")),row=1,col=1)
+    fig.add_trace(go.Scatter(x=df.index[lb],y=df.loc[lb,"AdjCloseCalc"],mode="markers",name="Lower Band Break",marker=dict(symbol="x",size=10,color="#991B1B")),row=1,col=1)
+
+    fig.add_trace(go.Scatter(x=df.index,y=df["NWNormalizedSlope"],mode="lines",name="NW Normalized Slope",line=dict(width=1.3,color="#0F172A")),row=2,col=1,secondary_y=False)
+    fig.add_trace(go.Scatter(x=df.index,y=df["ResidualDriftZ"],mode="lines",name=f"Relative Drift Z vs {benchmark_ticker}",line=dict(width=1.4,color="#1D4ED8")),row=2,col=1,secondary_y=True)
+    for y in [tactical_cfg.weak_z,tactical_cfg.strong_z,tactical_cfg.extreme_z,-tactical_cfg.weak_z,-tactical_cfg.strong_z,-tactical_cfg.extreme_z]:
+        fig.add_hline(y=y,row=2,col=1,line_width=.7,line_dash="dot",line_color="#CBD5E1")
+
+    fig.add_trace(go.Scatter(x=df.index,y=df["TacticalTargetExposure"],mode="lines",name="Target Exposure",line=dict(width=1.3,color="#334155"),fill="tozeroy",fillcolor="rgba(51,65,85,.08)"),row=3,col=1,secondary_y=False)
+    fig.add_trace(go.Scatter(x=df.index,y=df["RelativeVolume"],mode="lines",name="Relative Volume",line=dict(width=1.0,color="#B45309")),row=3,col=1,secondary_y=True)
+
+    fig.update_layout(
+        title=dict(text="Institutional Trend Diagnostics — NW Structure, Relative Regime & Exposure",x=.01,xanchor="left",y=.965,yanchor="top",font=dict(size=15),pad=dict(t=4,b=4)),
+        template="plotly_white",height=840,hovermode="x unified",margin=dict(l=52,r=45,t=130,b=35),
+        legend=dict(orientation="h",y=1.035,x=1,xanchor="right"),
+        font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif",size=11,color="#334155"),
+    )
+    fig.update_yaxes(title_text="Price / NW",row=1,col=1,gridcolor="#E2E8F0")
+    fig.update_yaxes(title_text="NW Slope",row=2,col=1,secondary_y=False,gridcolor="#E2E8F0")
+    fig.update_yaxes(title_text="Relative Z",row=2,col=1,secondary_y=True)
+    fig.update_yaxes(title_text="Exposure",tickformat=".0%",range=[0,1.02],row=3,col=1,secondary_y=False)
+    fig.update_yaxes(title_text="RVOL",row=3,col=1,secondary_y=True)
+    fig.update_xaxes(rangeselector=RANGE_SELECTOR,rangeslider=dict(visible=False),row=1,col=1)
+    return fig
+
+
+def make_var_comparison_chart(var_table, confidence):
+    d=var_table[(var_table["Status"]=="OK") & np.isclose(var_table["Confidence"],confidence)].copy()
+    fig=go.Figure()
+    for method in ["Historical","Parametric Normal","Monte Carlo Bootstrap"]:
+        x=d[d["Method"]==method]
+        fig.add_trace(go.Bar(x=x["Series"],y=x["VaR"],name=method,hovertemplate="%{x}<br>VaR: %{y:.2%}<extra>"+method+"</extra>"))
+    fig.update_layout(
+        title=dict(text=f"{confidence:.0%} VaR — Method Comparison",x=.01,xanchor="left",y=.955,yanchor="top",font=dict(size=15),pad=dict(t=4,b=4)),
+        barmode="group",template="plotly_white",height=460,margin=dict(l=55,r=25,t=105,b=55),
+        legend=dict(orientation="h",y=1.04,x=1,xanchor="right"),
+        font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif",size=11,color="#334155"),
+    )
+    fig.update_yaxes(title_text="VaR (loss %)",tickformat=".1%",gridcolor="#E2E8F0")
+    return fig
+
+
+def _risk_horizon_text(interval,bars):
+    bars=int(bars)
+    if interval=="15m": return f"{bars} bar(s) = {bars*15} minutes"
+    if interval=="1d": return f"{bars} trading day(s)"
+    if interval=="1wk": return f"{bars} week(s)"
+    if interval=="1mo": return f"{bars} month(s)"
+    return f"{bars} bar(s)"
+
 # ---------------------------- Header ----------------------------
 st.title("MK Trend Following Analytics Engine")
 st.caption(f"By Murat Konuklar  |  {APP_VERSION} Streamlit Cloud  |  Institutional Trend Systems")
@@ -710,59 +798,24 @@ with st.sidebar:
     if interval == "15m":
         st.caption("Yahoo 15-minute mode: strict maximum historical span is 60 days. The engine will not silently truncate an older request.")
 
-    strategy_label = st.selectbox("Strategy", ["ATR Trailing Stop", "ATR", "Bollinger"], index=0)
-    strategy_name = {"ATR":"ATR", "Bollinger":"BOLLINGER", "ATR Trailing Stop":"ATR_TRAILING_STOP"}[strategy_label]
-
-    st.divider()
-    st.subheader("Legacy Parameters")
-    initial_capital = st.number_input("Initial Capital", min_value=1.0, value=100000.0, step=10000.0)
-    atr_weeks = st.number_input("ATR Window", min_value=1, value=8, step=1)
-    atr_multiplier = st.number_input("ATR Multiplier", min_value=0.1, value=10.0, step=0.5)
-    bollinger_weeks = st.number_input("Bollinger Window", min_value=2, value=40, step=1)
-    bollinger_sd = st.number_input("Bollinger Std Dev", min_value=0.1, value=2.5, step=0.1)
-    st.markdown("##### Entry Gate Governance")
-    entry_mode_label = st.selectbox(
-        "Entry Breakout Mode",
-        ["Frequency-Aware", "Legacy Exact", "Custom"],
-        index=0,
-        help=(
-            "Frequency-Aware maps a calendar horizon to the selected data frequency. "
-            "Legacy Exact preserves the original 2000-observation breakout gate."
-        ),
+    initial_capital = st.number_input(
+        "Initial Capital", min_value=1.0, value=100000.0, step=10000.0,
+        help="Starting capital for the primary Institutional Tactical and research strategy layers."
     )
 
-    entry_horizon = "12M"
-    custom_entry_observations = 252
-    if entry_mode_label == "Frequency-Aware":
-        entry_horizon = st.selectbox(
-            "Entry Breakout Horizon",
-            horizon_options(interval),
-            index=(horizon_options(interval).index("12M") if "12M" in horizon_options(interval) else 2),
-            help="BUY requires the prior adjusted close to reach the rolling maximum over this horizon.",
-        )
-        max_buy_weeks, entry_gate_label = resolve_entry_lookback(
-            interval, "Frequency-Aware", horizon=entry_horizon
-        )
-        st.caption(f"Effective entry lookback: **{max_buy_weeks} observations**.")
-    elif entry_mode_label == "Legacy Exact":
-        max_buy_weeks, entry_gate_label = resolve_entry_lookback(interval, "Legacy Exact")
-        st.warning(
-            "Legacy Exact uses 2000 observations. For recently listed stocks such as ASTOR, "
-            "this can become an effective all-history-high entry gate and can keep the strategy in cash for long periods."
-        )
-    else:
-        custom_entry_observations = st.number_input(
-            "Custom Entry Lookback (observations)",
-            min_value=2, value=252, step=1,
-        )
-        max_buy_weeks, entry_gate_label = resolve_entry_lookback(
-            interval, "Custom", custom_observations=int(custom_entry_observations)
-        )
-
-    legacy_fidelity = st.toggle(
-        "Legacy OFFSET Fidelity",
-        value=True,
-        help="Preserves the original workbook's inclusive Excel OFFSET window semantics exactly.",
+    # Internal workbook-replication defaults remain code-only for regression tests.
+    # They are never shown as client controls or client decisions.
+    strategy_name = "ATR_TRAILING_STOP"
+    atr_weeks = 8
+    atr_multiplier = 10.0
+    bollinger_weeks = 40
+    bollinger_sd = 2.5
+    legacy_fidelity = True
+    entry_mode_label = "Frequency-Aware"
+    _entry_options = horizon_options(interval)
+    _default_horizon = "12M" if "12M" in _entry_options else _entry_options[min(2, len(_entry_options)-1)]
+    max_buy_weeks, entry_gate_label = resolve_entry_lookback(
+        interval, "Frequency-Aware", horizon=_default_horizon
     )
 
     st.divider()
@@ -956,7 +1009,7 @@ if run_clicked:
     )
 
     try:
-        with st.spinner(f"Requesting Yahoo Finance for {ticker} and running the validated legacy engine..."):
+        with st.spinner(f"Requesting Yahoo Finance for {ticker} and running the institutional analytics pipeline..."):
             raw = YahooFinanceAdapter.fetch(
                 ticker=ticker, start=str(start), end=str(end), interval=interval,
                 minimum_observations=cfg.minimum_observations,
@@ -1124,7 +1177,7 @@ interval_label_used = st.session_state.interval_label
 
 # ---------------------------- Executive strip ----------------------------
 st.markdown(f"### {name_used if name_used != 'Manual' else ticker_used}  ·  `{ticker_used}`")
-st.caption(f"{market_used} / {group_used}  |  {interval_label_used}  |  {summary['start'].date()} → {summary['end'].date()}  |  Active strategy: {cfg.strategy.replace('_',' ')}")
+st.caption(f"{market_used} / {group_used}  |  {interval_label_used}  |  {summary['start'].date()} → {summary['end'].date()}  |  Primary engine: MK Institutional Tactical")
 
 k1,k2,k3,k4,k5,k6,k7,k8 = st.columns(8)
 if tactical_enabled_used and tactical_decision is not None:
@@ -1135,22 +1188,23 @@ if tactical_enabled_used and tactical_decision is not None:
     k5.metric("Rolling Beta", fmt_num(tactical_decision["beta"]))
     k6.metric("NW Envelope Z", fmt_num(tactical_decision["envelope_z"]))
     k7.metric("Benchmark", benchmark_ticker_used or "—")
-    k8.metric("Legacy Reference", decision["decision"])
+    k8.metric("Decision Source", "Tactical v0.07.1")
 else:
-    k1.metric("Decision", decision["decision"])
-    k2.metric("Position", decision["position"].replace(" / LONG", ""))
+    k1.metric("PRIMARY Decision", "NO DECISION")
+    k2.metric("Target Exposure", "—")
     k3.metric("Last Adj. Close", fmt_num(result["AdjCloseCalc"].iloc[-1]))
-    k4.metric("Price / Stop Gap", fmt_pct(decision["price_stop_gap"]))
-    k5.metric("Strategy CAGR", fmt_pct(summary["strategy_cagr"]))
-    k6.metric("Buy & Hold CAGR", fmt_pct(summary["buyhold_cagr"]))
-    k7.metric("Strategy Max DD", fmt_pct(summary["max_drawdown"]))
-    k8.metric("Ann. Volatility", fmt_pct(summary["annualized_volatility"]))
+    k4.metric("Relative Drift Z", "—")
+    k5.metric("Rolling Beta", "—")
+    k6.metric("NW Envelope Z", "—")
+    k7.metric("Benchmark", benchmark_ticker_used or "—")
+    k8.metric("Decision Source", "TACTICAL DISABLED")
+    st.warning("The Institutional Tactical Layer is disabled. No secondary decision engine will be substituted.")
 
 # ---------------------------- Main tabs ----------------------------
 tabs = st.tabs([
     "Executive & Primary Decision",
     "Institutional Tactical",
-    "Price & Legacy Signals",
+    "Price & Signals",
     "Nadaraya-Watson Trend",
     "Strategy vs Buy & Hold",
     "Risk Analytics",
@@ -1183,66 +1237,17 @@ with tabs[0]:
         st.markdown(
             f"<div class='section-note'><b>Benchmark:</b> {benchmark_name(benchmark_ticker_used)} "
             f"(`{benchmark_ticker_used}`) · <b>Sensitivity:</b> {tactical_sensitivity_used}. "
-            "Legacy ATR/Bollinger logic is retained below only as an audit/reference layer, not as the primary institutional exit decision.</div>",
-            unsafe_allow_html=True,
-        )
-        st.divider()
-        st.markdown("### Legacy Reference / Audit Layer")
-
-    left, right = st.columns([1.35, 1])
-    with left:
-        st.markdown(
-            f'''<div class="decision-card">
-                <div class="decision-label">Current Strategy Decision</div>
-                <div class="decision-value">{decision['decision']}</div>
-                <div class="decision-reason">{decision['rationale']}</div>
-            </div>''',
-            unsafe_allow_html=True,
-        )
-        st.markdown("#### Decision Causality Matrix")
-        st.dataframe(decision["gates"], use_container_width=True, hide_index=True, height=248)
-        st.markdown(
-            f"<div class='section-note'><b>Important:</b> {decision['legacy_scope_note']} "
-            "Therefore the valid strategy actions are BUY, HOLD, SELL and WAIT / CASH. "
-            "A REDUCE decision would be a new methodology and is deliberately not invented inside Legacy Fidelity.</div>",
-            unsafe_allow_html=True,
-        )
-    with right:
-        st.markdown("#### Trigger Diagnostics")
-        d1,d2 = st.columns(2)
-        d1.metric("Raw Legacy Trigger", decision["raw_trigger"])
-        d2.metric("Active Threshold", decision["active_stop_column"])
-        d3,d4 = st.columns(2)
-        d3.metric("Prior Close", fmt_num(decision["prior_close"]))
-        d4.metric("Prior Rolling Max", fmt_num(decision["prior_max"]))
-        d5,d6 = st.columns(2)
-        d5.metric("Prior Active Stop", fmt_num(decision["prior_active_stop"]))
-        d6.metric("Prior Close / Stop", fmt_pct(decision["prior_stop_gap"]))
-        d7,d8 = st.columns(2)
-        d7.metric("Breakout Gap", fmt_pct(decision["breakout_gap"]))
-        d8.metric("Completed Exits", f"{summary['first_sells']:,}")
-        st.markdown(
-            "<div class='micro'>Decision timing: the prior completed bar determines the trigger. "
-            "If an executable BUY or SELL is generated, the transaction occurs at the current bar's adjusted open. "
-            "A raw BUY while already invested becomes portfolio-level HOLD because the legacy engine does not pyramid.</div>",
+            "Decision source: Institutional Tactical.</div>",
             unsafe_allow_html=True,
         )
 
-    st.markdown("#### Performance Snapshot")
-    p1,p2,p3,p4,p5,p6 = st.columns(6)
-    p1.metric("Final Strategy Value", f"{summary['portfolio_final']:,.0f}")
-    p2.metric("Final Buy & Hold", f"{summary['buyhold_final']:,.0f}")
-    p3.metric("Closed Trades", f"{tstats['closed_trades']:,}")
-    p4.metric("Win Rate", fmt_pct(tstats["win_rate"]))
-    p5.metric("Avg Trade", fmt_pct(tstats["avg_trade"]))
-    p6.metric("Avg Holding Days", fmt_num(tstats["avg_holding_days"], 0))
 
 with tabs[1]:
     if not tactical_enabled_used or tactical_result is None:
         st.info("Institutional Tactical Layer was disabled for this run.")
     else:
         st.markdown(
-            "<div class='section-note'><b>Fast tactical objective:</b> do not wait for a remote legacy stop. "
+            "<div class='section-note'><b>Fast tactical objective:</b> react to envelope exhaustion and relative deterioration before a deep loss develops. "
             "An upside NW-envelope excursion can trigger an immediate staged trim; re-entry below the upper band, "
             "bearish NW reversal, abnormal relative volume and beta-adjusted benchmark divergence can deepen the reduction. "
             "Severe relative breakdown or lower-band failure can force a full exit.</div>",
@@ -1273,29 +1278,42 @@ with tabs[1]:
             st.dataframe(tactical_result[cols].sort_index(ascending=False),use_container_width=True,height=560)
 
 with tabs[2]:
-    c1, c2 = st.columns([1, 3])
-    with c1:
-        chart_mode = st.radio("Price display", ["Candlestick", "Adjusted Close Line"], horizontal=False)
-        st.caption("Use the range buttons above the chart, mouse-wheel zoom, legend trace toggles and hover inspection.")
-    with c2:
-        st.markdown(
-            "<div class='section-note'><b>Entry gate:</b> prior adjusted close must reach the prior rolling maximum. "
-            "<b>Exit gate:</b> prior adjusted close must breach the selected stop. "
-            "BUY/SELL markers show actual executions at the next bar's adjusted open.</div>",
-            unsafe_allow_html=True,
-        )
-    st.plotly_chart(make_price_chart(result, cfg, chart_mode), use_container_width=True, config=PLOT_CFG)
+    st.markdown(
+        "<div class='section-note'><b>Client-facing signal chart:</b> adjusted price, Nadaraya-Watson path/envelope "
+        "and Institutional Tactical events only.</div>",
+        unsafe_allow_html=True,
+    )
+    st.plotly_chart(make_primary_price_chart(result, f"{name_used} ({ticker_used})"), use_container_width=True, config=PLOT_CFG)
 
 with tabs[3]:
     if not nw_enabled_used or nw_result is None:
         st.info("Nadaraya-Watson research layer was disabled for this run. Enable it in the sidebar and run the analysis again.")
     else:
         st.markdown(
-            "<div class='section-note'><b>Methodology attribution:</b> QuantAlgo's public/open-source TradingView "
-            "Nadaraya-Watson Trend describes a one-sided causal kernel estimator, six selectable kernels, kernel-weighted "
-            "absolute-residual bands, and slope-reversal markers. The Python implementation here is an independent "
-            "reimplementation of that public methodology; the MK strategy layer is separately specified and uses next-open execution.</div>",
+            "<div class='section-note'><b>Nadaraya-Watson rulebook:</b> the estimator is causal and one-sided. "
+            "Every signal is formed from a completed bar; portfolio actions execute at the next adjusted open. "
+            "The tactical layer treats envelope excursions as early risk events rather than waiting for a distant hard stop.</div>",
             unsafe_allow_html=True,
+        )
+
+        _nw_rules = pd.DataFrame([
+            {"Layer":"Estimator","Rule":"NW(t) = kernel-weighted estimate using current/past bars only","Action":"State estimation","Current Setting":f"{nw_cfg.kernel}; lookback {nw_cfg.lookback}; h={nw_cfg.effective_bandwidth:g}"},
+            {"Layer":"Trend Regime","Rule":"NW slope > 0 = bullish; NW slope < 0 = bearish","Action":"Directional state","Current Setting":nw_decision["trend_direction"]},
+            {"Layer":"Bullish Reversal","Rule":"NW slope flips non-positive → positive","Action":"BUY / restore candidate","Current Setting":"TRIGGERED" if nw_decision["bullish_reversal"] else "No"},
+            {"Layer":"Bearish Reversal","Rule":"NW slope flips non-negative → negative","Action":"REDUCE / SELL candidate","Current Setting":"TRIGGERED" if nw_decision["bearish_reversal"] else "No"},
+            {"Layer":"Upper Envelope","Rule":"Source crosses above NW Upper residual band","Action":"Immediate tactical trim; overextension alert","Current Setting":f"Upper={nw_decision['upper']:.2f}"},
+            {"Layer":"Upper Re-entry","Rule":"Source returns below Upper band after excursion","Action":"Deeper reduction / exhaustion confirmation","Current Setting":"Primary Tactical rule"},
+            {"Layer":"Lower Envelope","Rule":"Source crosses below NW Lower band + bearish slope","Action":"SELL 100% candidate","Current Setting":f"Lower={nw_decision['lower']:.2f}"},
+            {"Layer":"MK Confirmed Entry","Rule":f"{nw_scfg.confirmation_bars} bullish bar(s) + Source > NW" + (" + Source <= Upper" if nw_scfg.avoid_upper_band_chase else ""),"Action":"BUY / restore","Current Setting":nw_decision["entry_reason"]},
+            {"Layer":"MK Confirmed Exit","Rule":f"Source < NW OR {nw_scfg.exit_confirmation_bars} bearish bar(s)","Action":"Exit candidate","Current Setting":nw_decision["exit_reason"]},
+            {"Layer":"Benchmark Filter","Rule":f"Beta-adjusted residual drift vs {benchmark_ticker_used}; z thresholds ±{tactical_cfg.weak_z:g}/±{tactical_cfg.strong_z:g}/±{tactical_cfg.extreme_z:g}","Action":"Escalate BUY/REDUCE/SELL","Current Setting":f"z={tactical_decision['relative_z']:.2f}" if tactical_decision else "N/A"},
+            {"Layer":"Execution","Rule":"Completed bar signal → next adjusted open","Action":"No look-ahead","Current Setting":"ENFORCED"},
+        ])
+        st.markdown("#### Nadaraya-Watson + Tactical Rulebook")
+        st.dataframe(_nw_rules,use_container_width=True,hide_index=True,height=430)
+        st.caption(
+            "Priority matters: severe lower-band / extreme relative-breakdown exits are evaluated before weaker trim signals. "
+            "Upper-band crosses are deliberately treated as early de-risking events in High Sensitivity mode."
         )
 
         n1,n2,n3,n4,n5,n6,n7 = st.columns(7)
@@ -1355,29 +1373,16 @@ with tabs[3]:
             st.plotly_chart(make_nw_state_chart(nw_result), use_container_width=True, config=PLOT_CFG)
 
         st.markdown("#### Strategy Research Comparison — Same Market Data")
-        compare = pd.DataFrame([
-            {
-                "System":"Active Legacy Strategy",
-                "CAGR":summary["strategy_cagr"],
-                "Max Drawdown":summary["max_drawdown"],
-                "Final Value":summary["portfolio_final"],
-                "Closed Trades":tstats["closed_trades"],
-            },
-            {
-                "System":strategy_mode_label(nw_scfg.mode),
-                "CAGR":nw_summary["strategy_cagr"],
-                "Max Drawdown":nw_summary["max_drawdown"],
-                "Final Value":nw_summary["portfolio_final"],
-                "Closed Trades":nw_tstats["closed_trades"],
-            },
-            {
-                "System":"Buy & Hold",
-                "CAGR":nw_summary["buyhold_cagr"],
-                "Max Drawdown":nw_summary["buyhold_max_drawdown"],
-                "Final Value":nw_summary["buyhold_final"],
-                "Closed Trades":0,
-            },
+        _rows=[]
+        if tactical_enabled_used and tactical_result is not None:
+            _tp=pd.to_numeric(tactical_result["TacticalPortfolio"],errors="coerce")
+            _years=max((tactical_result.index[-1]-tactical_result.index[0]).days/365.25,1e-9)
+            _rows.append({"System":"MK Institutional Tactical","CAGR":(_tp.iloc[-1]/float(initial_capital))**(1/_years)-1,"Max Drawdown":(_tp/_tp.cummax()-1).min(),"Final Value":float(_tp.iloc[-1]),"Closed Trades":int((tactical_result["TacticalTradedValue"]>0).sum())})
+        _rows.extend([
+            {"System":strategy_mode_label(nw_scfg.mode),"CAGR":nw_summary["strategy_cagr"],"Max Drawdown":nw_summary["max_drawdown"],"Final Value":nw_summary["portfolio_final"],"Closed Trades":nw_tstats["closed_trades"]},
+            {"System":"Buy & Hold","CAGR":nw_summary["buyhold_cagr"],"Max Drawdown":nw_summary["buyhold_max_drawdown"],"Final Value":nw_summary["buyhold_final"],"Closed Trades":0},
         ])
+        compare=pd.DataFrame(_rows)
         st.dataframe(
             compare.style.format({"CAGR":"{:.2%}","Max Drawdown":"{:.2%}","Final Value":"{:,.0f}"}),
             use_container_width=True, hide_index=True,
@@ -1403,173 +1408,172 @@ with tabs[3]:
 
 
 with tabs[4]:
-    st.plotly_chart(make_equity_chart(result, entry_gate_label_used), use_container_width=True, config=PLOT_CFG)
-    e1,e2,e3,e4 = st.columns(4)
-    total_strategy = summary["portfolio_final"] / cfg.initial_capital - 1.0
-    total_bh = summary["buyhold_final"] / cfg.initial_capital - 1.0
-    e1.metric("Total Strategy Return", fmt_pct(total_strategy))
-    e2.metric("Total Buy & Hold Return", fmt_pct(total_bh))
-    e3.metric("Cumulative Excess", fmt_pct(total_strategy-total_bh))
-    e4.metric("CAGR Spread", fmt_pct(summary["strategy_cagr"]-summary["buyhold_cagr"]))
-
-    gate_state = effective_gate_state(result, entry_lookback_used)
-    events = latest_execution_events(result)
-    longest_cash = longest_cash_regime(result)
-
-    st.markdown("#### Entry Gate & Cash-Regime Diagnostics")
-    g1,g2,g3,g4,g5 = st.columns(5)
-    g1.metric("Entry Lookback", f"{entry_lookback_used:,} obs")
-    g2.metric("Effective Gate", "ALL-HISTORY HIGH" if gate_state["effective_all_history"] else "ROLLING HIGH")
-    g3.metric("Latest Entry Threshold", fmt_num(gate_state["latest_entry_gate"]))
-    g4.metric("Gap to Entry Gate", fmt_pct(gate_state["gap_to_entry_gate"]))
-    g5.metric("Last Executed BUY", events["last_buy"].date().isoformat() if events["last_buy"] is not None else "—")
-
-    if gate_state["effective_all_history"]:
-        st.warning(
-            f"ENTRY GATE DIAGNOSTIC — The selected lookback ({entry_lookback_used:,}) is at least as long as the "
-            f"available dataset ({gate_state['observations']:,} observations). The BUY gate therefore behaves like an "
-            "all-history-high breakout rule. A strategy that has sold can remain in CASH until the stock reaches a new historical high."
-        )
-
-    if longest_cash is not None:
-        st.markdown(
-            f"<div class='section-note'><b>Longest cash regime:</b> "
-            f"{longest_cash['Start'].date()} → {longest_cash['End'].date()} "
-            f"({longest_cash['Observations']:,} observations / {longest_cash['Calendar Days']:,} calendar days). "
-            f"During that interval the strategy portfolio is flat by construction because Shares = 0 and Cash is unchanged, "
-            f"while the underlying stock itself returned {longest_cash['Underlying Return During Cash']:.2%}.</div>",
-            unsafe_allow_html=True,
-        )
-
-    with st.expander("Cash Regime Ledger", expanded=False):
-        cash_df = pd.DataFrame(portfolio_cash_regimes(result))
-        if cash_df.empty:
-            st.write("No cash regimes in the selected history.")
-        else:
-            cash_df = cash_df.sort_values("Start", ascending=False)
-            cash_df["Underlying Return During Cash"] = cash_df["Underlying Return During Cash"].map(
-                lambda x: f"{x:.2%}" if pd.notna(x) else ""
-            )
-            st.dataframe(cash_df, use_container_width=True, hide_index=True)
+    if tactical_enabled_used and tactical_result is not None:
+        st.markdown("<div class='section-note'><b>Primary strategy comparison:</b> Institutional Tactical portfolio versus Buy & Hold.</div>", unsafe_allow_html=True)
+        st.plotly_chart(make_tactical_portfolio_chart(tactical_result), use_container_width=True, config=PLOT_CFG)
+        _tp=pd.to_numeric(tactical_result["TacticalPortfolio"],errors="coerce")
+        _bh=pd.to_numeric(tactical_result["BuyHold"],errors="coerce")
+        c1,c2,c3,c4=st.columns(4)
+        c1.metric("Tactical Total Return",fmt_pct(_tp.iloc[-1]/float(initial_capital)-1))
+        c2.metric("Buy & Hold Return",fmt_pct(_bh.iloc[-1]/float(initial_capital)-1))
+        c3.metric("Tactical Max DD",fmt_pct((_tp/_tp.cummax()-1).min()))
+        c4.metric("Buy & Hold Max DD",fmt_pct((_bh/_bh.cummax()-1).min()))
+    elif nw_enabled_used and nw_result is not None:
+        st.info("Tactical Layer disabled; showing Nadaraya-Watson research strategy versus Buy & Hold.")
+        st.plotly_chart(make_nw_equity_chart(nw_result), use_container_width=True, config=PLOT_CFG)
+    else:
+        st.warning("No primary strategy comparison is available.")
 
 with tabs[5]:
     st.markdown(
-        "<div class='section-note'><b>Risk-source separation:</b> Underlying Asset risk is calculated from the instrument's "
-        "adjusted-close series. Strategy risk is calculated separately from the portfolio equity curve. "
-        "Cash periods can legitimately flatten Strategy return/volatility, but they must never flatten the underlying instrument's risk chart.</div>",
+        "<div class='section-note'><b>Institutional risk frame:</b> the selected dashboard timeframe, selected rolling calibration window, "
+        "and the active Yahoo benchmark are used consistently. No missing asset/benchmark observations are filled.</div>",
         unsafe_allow_html=True,
     )
 
-    window_specs = rolling_window_options(result.index)
-    default_idx = next((i for i, x in enumerate(window_specs) if x.label == "3M"), 0)
-    selected_spec = st.selectbox(
-        "Rolling Risk Window",
-        window_specs,
-        index=default_idx,
-        format_func=lambda x: f"{x.label}  |  {x.observations} {x.frequency_label.lower()} observations",
-    )
-    rolling, used_spec = rolling_risk_frame(result, selected_spec.observations)
-    risk_state = risk_state_snapshot(result, rolling, used_spec)
-    risk_integrity = validate_underlying_risk_dynamics(result, rolling)
+    _risk_source=result.copy()
+    _risk_label="Nadaraya-Watson Research"
+    if tactical_enabled_used and tactical_result is not None:
+        _risk_source["Portfolio"]=pd.to_numeric(tactical_result["TacticalPortfolio"],errors="coerce")
+        _risk_source["Shares"]=np.where(pd.to_numeric(tactical_result["TacticalTargetExposure"],errors="coerce")>0,1.0,0.0)
+        _risk_label="MK Institutional Tactical"
+    elif nw_enabled_used and nw_result is not None:
+        _risk_source["Portfolio"]=pd.to_numeric(nw_result["Portfolio"],errors="coerce")
+        _risk_source["Shares"]=pd.to_numeric(nw_result["NWExposure"],errors="coerce")
 
+    window_specs=rolling_window_options(_risk_source.index)
+    default_idx=max(0,len(window_specs)-1)
+    selected_spec=st.selectbox(
+        "Risk Calibration Window",
+        window_specs,index=default_idx,
+        format_func=lambda x:f"{x.label} | {x.observations} {x.frequency_label.lower()} observations",
+    )
+    rolling,used_spec=rolling_risk_frame(_risk_source,selected_spec.observations)
+    risk_state=risk_state_snapshot(_risk_source,rolling,used_spec)
+    risk_integrity=validate_underlying_risk_dynamics(result,rolling)
     if risk_integrity["impossible_flatness"]:
-        st.error(
-            "RISK INTEGRITY STOP — The underlying adjusted-close series moves, but both "
-            "underlying rolling return and rolling volatility are effectively constant. "
-            "This is not accepted as a valid chart state. Review the deployed files / data pipeline."
-        )
+        st.error("RISK INTEGRITY STOP — moving Yahoo prices produced an impossible flat underlying risk state. Analysis stopped.")
         st.stop()
 
-    st.plotly_chart(make_drawdown_chart(result), use_container_width=True, config=PLOT_CFG)
+    st.markdown("### Value at Risk — Asset, Benchmark, Active Residual & Strategy")
+    vh1,vh2=st.columns([1,1])
+    with vh1:
+        default_h=4 if interval_used=="15m" else 1
+        var_horizon=st.number_input("VaR Horizon (bars)",min_value=1,max_value=max(1,min(20,used_spec.observations//3)),value=min(default_h,max(1,min(20,used_spec.observations//3))),step=1)
+    with vh2:
+        mc_scenarios=st.selectbox("Monte Carlo Scenarios",[10000,25000,50000],index=1)
 
-    st.markdown("#### Underlying Asset Risk — Market Data")
-    st.plotly_chart(
-        make_underlying_rolling_risk_chart(result, rolling, used_spec, f"{name_used} ({ticker_used})"),
-        use_container_width=True,
-        config=PLOT_CFG,
-    )
-    a1,a2,a3,a4 = st.columns(4)
-    a1.metric(f"{used_spec.label} Asset Rolling Return", fmt_pct(risk_state["asset_rolling_return"]))
-    a2.metric(f"{used_spec.label} Asset Ann. Volatility", fmt_pct(risk_state["asset_annualized_volatility"]))
-    a3.metric("Underlying Source", "Adjusted Close")
-    a4.metric("Risk-Series Unique Points", f"{risk_integrity['rolling_return_unique']:,}")
-
-    with st.expander("Underlying Risk Integrity Diagnostics", expanded=False):
-        st.dataframe(
-            pd.DataFrame([{
-                "Adjusted Close Unique Prices": risk_integrity["price_unique"],
-                "Adjusted Close Range": risk_integrity["price_range"],
-                "Rolling Return Unique Values": risk_integrity["rolling_return_unique"],
-                "Rolling Return Range": risk_integrity["rolling_return_range"],
-                "Rolling Vol Unique Values": risk_integrity["rolling_vol_unique"],
-                "Rolling Vol Range": risk_integrity["rolling_vol_range"],
-                "Impossible Flatness": risk_integrity["impossible_flatness"],
-            }]),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    st.markdown("#### Strategy Risk — Portfolio Exposure")
-    st.plotly_chart(
-        make_strategy_rolling_risk_chart(result, rolling, used_spec),
-        use_container_width=True,
-        config=PLOT_CFG,
-    )
-    s1,s2,s3,s4,s5 = st.columns(5)
-    s1.metric(f"{used_spec.label} Strategy Rolling Return", fmt_pct(risk_state["strategy_rolling_return"]))
-    s2.metric(f"{used_spec.label} Strategy Ann. Volatility", fmt_pct(risk_state["strategy_annualized_volatility"]))
-    s3.metric(f"{used_spec.label} Rolling Exposure", fmt_pct(risk_state["rolling_exposure"]))
-    s4.metric("Current Position", risk_state["current_position"])
-    s5.metric("Full-History Cash Exposure", fmt_pct(risk_state["cash_exposure_ratio"]))
-
-    if risk_state["strategy_flat_reason"]:
-        st.info(risk_state["strategy_flat_reason"])
+    if relative_result is None or benchmark_ticker_used is None:
+        st.error("BENCHMARK RISK STOP — VaR comparison requires the selected Yahoo benchmark and exact-timestamp relative dataset.")
     else:
+        _asset_ret=pd.to_numeric(result["AdjCloseCalc"],errors="coerce").pct_change(fill_method=None)
+        _bench_ret=pd.to_numeric(relative_result["BenchmarkPrice"],errors="coerce").pct_change(fill_method=None)
+        _strategy_ret=pd.to_numeric(_risk_source["Portfolio"],errors="coerce").pct_change(fill_method=None)
+        _active_resid=np.expm1(pd.to_numeric(relative_result["ResidualReturn"],errors="coerce"))
+        _series={
+            f"Asset — {ticker_used}":_asset_ret,
+            f"Benchmark — {benchmark_ticker_used}":_bench_ret,
+            "Beta-Adjusted Active Residual":_active_resid,
+            f"Strategy — {_risk_label}":_strategy_ret,
+        }
+        _var_cfg=VaRConfig(horizon_bars=int(var_horizon),mc_scenarios=int(mc_scenarios),min_observations=max(20,min(30,used_spec.observations//2)))
+        var_table=build_var_table(_series,calibration_observations=used_spec.observations,config=_var_cfg)
+        _vt=var_table.copy()
+        _vt["Confidence"]=_vt["Confidence"].map(lambda x:f"{x:.0%}" if pd.notna(x) else "—")
+        _vt["VaR"]=_vt["VaR"].map(lambda x:f"{x:.2%}" if pd.notna(x) else "—")
+
+        v1,v2,v3,v4=st.columns(4)
+        v1.metric("Timeframe",interval_label_used)
+        v2.metric("Calibration",f"{used_spec.label} / {used_spec.observations} bars")
+        v3.metric("VaR Horizon",_risk_horizon_text(interval_used,var_horizon))
+        v4.metric("Benchmark",benchmark_ticker_used)
+        st.dataframe(_vt,use_container_width=True,hide_index=True,height=620)
+        conf_view=st.radio("VaR Chart Confidence",["95%","99%"],horizontal=True,index=1)
+        st.plotly_chart(make_var_comparison_chart(var_table,0.95 if conf_view=="95%" else 0.99),use_container_width=True,config=PLOT_CFG)
         st.caption(
-            "If the strategy graph contains flat segments, inspect Current Position and cash exposure. "
-            "Flat strategy volatility during a cash regime is mathematically valid and is not interpreted as zero volatility for the underlying stock."
+            "Historical VaR = empirical lower-tail quantile of observed compounded returns. Parametric VaR = Normal model fitted to observed log returns. "
+            "Monte Carlo VaR = empirical bootstrap scenarios drawn only from observed returns. Simulation scenarios are risk calculations only; they are never appended to Yahoo history or used as replacement market observations."
         )
 
-    r1,r2,r3,r4 = st.columns(4)
-    r1.metric("Strategy Max DD", fmt_pct(summary["max_drawdown"]))
-    r2.metric("Buy & Hold Max DD", fmt_pct(summary["buyhold_max_drawdown"]))
-    r3.metric("Best Closed Trade", fmt_pct(tstats["best_trade"]))
-    r4.metric("Worst Closed Trade", fmt_pct(tstats["worst_trade"]))
+    st.markdown("### Rolling Risk & Drawdown")
+    st.plotly_chart(make_drawdown_chart(_risk_source),use_container_width=True,config=PLOT_CFG)
+    st.markdown("#### Underlying Asset Risk")
+    st.plotly_chart(make_underlying_rolling_risk_chart(result,rolling,used_spec,f"{name_used} ({ticker_used})"),use_container_width=True,config=PLOT_CFG)
+    a1,a2,a3,a4=st.columns(4)
+    a1.metric(f"{used_spec.label} Asset Rolling Return",fmt_pct(risk_state["asset_rolling_return"]))
+    a2.metric(f"{used_spec.label} Asset Ann. Volatility",fmt_pct(risk_state["asset_annualized_volatility"]))
+    a3.metric("Risk Frequency",used_spec.frequency_label)
+    a4.metric("Risk-Series Unique Points",f"{risk_integrity['rolling_return_unique']:,}")
+
+    st.markdown("#### Strategy Risk — Primary Portfolio")
+    st.plotly_chart(make_strategy_rolling_risk_chart(_risk_source,rolling,used_spec),use_container_width=True,config=PLOT_CFG)
+    s1,s2,s3,s4=st.columns(4)
+    s1.metric(f"{used_spec.label} Strategy Rolling Return",fmt_pct(risk_state["strategy_rolling_return"]))
+    s2.metric(f"{used_spec.label} Strategy Ann. Volatility",fmt_pct(risk_state["strategy_annualized_volatility"]))
+    s3.metric(f"{used_spec.label} Rolling Exposure",fmt_pct(risk_state["rolling_exposure"]))
+    s4.metric("Current Position",risk_state["current_position"])
+
+    with st.expander("Risk Integrity Diagnostics",expanded=False):
+        st.dataframe(pd.DataFrame([{
+            "Adjusted Close Unique Prices":risk_integrity["price_unique"],
+            "Adjusted Close Range":risk_integrity["price_range"],
+            "Rolling Return Unique Values":risk_integrity["rolling_return_unique"],
+            "Rolling Return Range":risk_integrity["rolling_return_range"],
+            "Rolling Vol Unique Values":risk_integrity["rolling_vol_unique"],
+            "Rolling Vol Range":risk_integrity["rolling_vol_range"],
+            "Impossible Flatness":risk_integrity["impossible_flatness"],
+        }]),use_container_width=True,hide_index=True)
 
 with tabs[6]:
-    st.plotly_chart(make_trend_diagnostics(result), use_container_width=True, config=PLOT_CFG)
     st.markdown(
-        "<div class='section-note'>All three legacy thresholds are shown simultaneously for diagnosis. "
-        "Only the strategy selected in the sidebar controls the exit decision. Legacy ATR is reproduced exactly; "
-        "it is not silently replaced by a conventional modern ATR-price stop.</div>",
+        "<div class='section-note'><b>Trend Diagnostics:</b> Nadaraya-Watson structure, benchmark-relative regime, relative volume, and target exposure. "
+        "No historical workbook threshold is used in this client-facing diagnostic.</div>",
         unsafe_allow_html=True,
     )
+    if tactical_enabled_used and tactical_result is not None and tactical_cfg is not None:
+        st.plotly_chart(make_institutional_trend_diagnostics(tactical_result,benchmark_ticker_used,tactical_cfg),use_container_width=True,config=PLOT_CFG)
+        _last=tactical_result.iloc[-1]
+        d1,d2,d3,d4,d5,d6=st.columns(6)
+        d1.metric("NW Regime","BULLISH" if int(_last["NWDirection"])>0 else "BEARISH" if int(_last["NWDirection"])<0 else "FLAT")
+        d2.metric("NW Envelope Z",fmt_num(_last["NWEnvelopeZ"]))
+        d3.metric("Relative Drift Z",fmt_num(_last["ResidualDriftZ"]))
+        d4.metric("Rolling Beta",fmt_num(_last["RollingBeta"]))
+        d5.metric("Relative Volume",fmt_num(_last["RelativeVolume"]))
+        d6.metric("Target Exposure",fmt_pct(_last["TacticalTargetExposure"]))
+        st.markdown("#### Diagnostic Interpretation")
+        st.dataframe(tactical_decision["gates"],use_container_width=True,hide_index=True,height=310)
+    elif nw_enabled_used and nw_result is not None:
+        st.plotly_chart(make_nw_state_chart(nw_result),use_container_width=True,config=PLOT_CFG)
+        st.info("Benchmark-relative tactical diagnostics are unavailable because the Tactical Layer was disabled.")
+    else:
+        st.info("No institutional trend diagnostic is available for this run.")
 
 with tabs[7]:
-    if trades is None or trades.empty:
-        st.info("No completed or open trades were generated in the selected history.")
+    if tactical_enabled_used and tactical_result is not None:
+        _a=tactical_result.copy(); _prev=_a["TacticalTargetExposure"].shift(1)
+        _mask=_a["TacticalTargetExposure"].ne(_prev) & _a["TacticalAction"].ne("")
+        _ledger=_a.loc[_mask,["AdjOpen","AdjCloseCalc","TacticalAction","TacticalTargetExposure","TacticalExposure","TacticalTradedValue","ResidualDriftZ","NWEnvelopeZ","RelativeVolume","TacticalRationale"]].copy()
+        _ledger.index.name="Execution Date"
+        st.markdown("#### Institutional Tactical Action Ledger")
+        st.dataframe(_ledger.sort_index(ascending=False),use_container_width=True,height=560)
+        st.caption("Exposure changes use the completed prior bar and execute at the next adjusted open.")
+    elif nw_enabled_used and nw_trades is not None:
+        st.markdown("#### Nadaraya-Watson Research Trade Ledger")
+        st.dataframe(nw_trades.sort_values("Entry Date",ascending=False) if len(nw_trades) else nw_trades,use_container_width=True,hide_index=True,height=520)
     else:
-        tdisplay = trades.copy()
-        if "Trade Return" in tdisplay:
-            tdisplay["Trade Return"] = tdisplay["Trade Return"].map(lambda x: f"{x:.2%}" if pd.notna(x) else "")
-        for c in ["Entry Price", "Exit Price"]:
-            if c in tdisplay:
-                tdisplay[c] = tdisplay[c].map(lambda x: f"{x:,.4f}" if pd.notna(x) else "")
-        st.dataframe(tdisplay.sort_values("Entry Date", ascending=False), use_container_width=True, hide_index=True, height=520)
-        st.caption("Trade returns use executed adjusted-open prices; an open trade is marked to the latest adjusted close.")
+        st.info("No primary trade/action ledger is available.")
 
 with tabs[8]:
-    show_cols = [
-        "Open","High","Low","Close","Volume","Adj Close","Return","TrueRange","ATR_Stop",
-        "MaxPrice","Signal","Shares","Cash","Portfolio","BuyHold","LowerBollinger","ATRTrailingStop"
-    ]
-    st.dataframe(result[show_cols].sort_index(ascending=False), use_container_width=True, height=650)
-    csv_bytes = result.reset_index().to_csv(index=False).encode("utf-8")
-    st.download_button(
-        "Export Calculation Ledger CSV", csv_bytes,
-        file_name=f"MK_Trend_Following_{ticker_used}_ledger_{APP_VERSION.replace('.','')}.csv",
-        mime="text/csv",
-    )
+    if tactical_enabled_used and tactical_result is not None:
+        _cols=["Open","High","Low","Close","Volume","Adj Close","AdjCloseCalc","NWTrend","NWUpper","NWLower","NWEnvelopeZ","NWSlope","NWDirection","NWCrossAboveUpper","NWReenterBelowUpper","NWCrossBelowLower","BenchmarkPrice","RollingBeta","ResidualZ","ResidualDriftZ","PriceRatioZ","RelativeVolume","TacticalAction","TacticalTargetExposure","TacticalExposure","TacticalPortfolio","TacticalRationale"]
+        _cols=[c for c in _cols if c in tactical_result.columns]
+        st.dataframe(tactical_result[_cols].sort_index(ascending=False),use_container_width=True,height=650)
+        _csv=tactical_result[_cols].reset_index().to_csv(index=False).encode("utf-8")
+        st.download_button("Export Institutional Tactical Ledger CSV",_csv,file_name=f"MK_Institutional_Tactical_{ticker_used}_{APP_VERSION.replace('.','')}.csv",mime="text/csv")
+    elif nw_enabled_used and nw_result is not None:
+        st.dataframe(nw_result.sort_index(ascending=False),use_container_width=True,height=650)
+    else:
+        st.info("No primary calculation ledger is available.")
 
 with tabs[9]:
     universe_df = pd.DataFrame(flat_universe_rows())
@@ -1601,34 +1605,15 @@ The indicator and the strategy are deliberately separated. The strategy reads a 
 
 """)
     st.markdown(f"""
-### Entry-gate governance
-The engine field historically named `max_buy_weeks` is actually an **observation-count lookback**.  
-- **Frequency-Aware (default):** 12M maps to 252 daily, 52 weekly, or 12 monthly observations.
-- **Legacy Exact:** preserves the original 2000-observation rule.
-- **Custom:** directly specifies the observation count.
+### Client decision-governance hierarchy
+The client-facing primary decision source is **MK Institutional Tactical**. It supports staged exposure
+`100% → 75% → 50% → 25% → 0%` and combines Nadaraya-Watson envelope events with benchmark-relative
+deviation and relative volume. If Tactical is disabled, the application displays **NO PRIMARY DECISION**;
+it does not substitute another decision engine.
 
-For a recently listed stock, a 2000-observation lookback can exceed the entire available history. In that case the entry gate becomes an effective **all-history-high breakout** and long cash plateaus are expected after an exit.
-
-### Decision hierarchy
-**1. Entry gate:** the prior completed adjusted close is compared with the prior rolling maximum.  
-**2. Exit gate:** the prior completed adjusted close is compared with the active strategy threshold.  
-**3. Position gate:** the engine checks whether the portfolio is already invested or in cash.  
-**4. Execution:** executable transactions occur at the current bar's adjusted open.
-
-### Portfolio-level decisions
-- **BUY:** breakout gate is triggered while the portfolio is in cash; shares are purchased at the current adjusted open.
-- **HOLD:** the portfolio is already invested and no executable exit occurs. A repeated raw BUY trigger also remains HOLD because the legacy engine does not pyramid.
-- **SELL:** the active stop gate is breached while the portfolio is invested; shares are liquidated at the current adjusted open.
-- **WAIT / CASH:** the portfolio is in cash and no executable entry occurs.
-
-### Why REDUCE is absent
-The original workbook is an all-in/all-out trend-following system. Partial position reduction is not part of its validated legacy mathematics. Adding REDUCE would require a separately specified modern strategy layer and is intentionally excluded from Legacy Fidelity.
-
-### Legacy Fidelity
-The original Excel mechanics are preserved, including inclusive `OFFSET`-style rolling windows. A nominal ATR parameter of 8 therefore contains 9 observations after saturation, exactly as in the legacy workbook.
 
 ### Institutional Tactical Layer
-The primary live decision is no longer the Legacy stop. The tactical hierarchy is:
+The primary live decision is the Institutional Tactical engine. Its hierarchy is:
 1. **NW upper-band cross:** immediate early de-risk / staged trim.
 2. **Upper-band re-entry:** confirms failed upside excursion and deepens the reduction.
 3. **NW reversal / path loss:** directional deterioration.
@@ -1646,26 +1631,10 @@ The engine hard-stops requests beyond that horizon instead of silently truncatin
 Yahoo Finance is the only live market-data source in this build. The application does not fabricate observations, fill missing market prices, or switch to another vendor. A failed or incomplete Yahoo response terminates that requested run.
 
 ### Price adjustment
-Yahoo is requested with `auto_adjust=False`. Raw OHLC and `Adj Close` stay distinct. The legacy engine derives `Scale = Adj Close / Close` and applies it to OHLC to reproduce the workbook methodology.
+Yahoo is requested with `auto_adjust=False`. Raw OHLC and `Adj Close` stay distinct. Adjusted OHLC is derived consistently from Yahoo `Adj Close / Close`; no alternate vendor or filled prices are introduced.
 
 ### Research boundary
 The displayed BUY / HOLD / SELL / WAIT labels are deterministic **strategy states**, not discretionary investment recommendations.
 """)
-
-html_doc = build_html(
-    result,
-    cfg,
-    ticker=ticker_used,
-    instrument_name=name_used,
-    market_label=f"{market_used} / {group_used}",
-    source_note=f"Yahoo Finance via yfinance | {interval_used} | Strict no-fallback policy",
-)
-st.download_button(
-    "Export Standalone Interactive HTML",
-    data=html_doc.encode("utf-8"),
-    file_name=f"MK_Trend_Following_{ticker_used}_{interval_used}_v006.html",
-    mime="text/html",
-    use_container_width=True,
-)
 
 st.caption("MK FinTECH LabGEN @2026 ATELIER ISTANBUL  |  By Murat Konuklar")

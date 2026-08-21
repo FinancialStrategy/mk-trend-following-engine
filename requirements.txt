@@ -1,12 +1,5 @@
-streamlit==1.59.2
+streamlit==1.61.1
+yfinance==1.6.0
+plotly==6.5.2
 pandas>=2.2,<3
 numpy>=2.0,<3
-scipy>=1.13,<2
-matplotlib>=3.9,<4
-plotly==6.5.2
-mplfinance==0.12.10b0
-yfinance==0.2.66
-pandas-ta==0.4.71b0
-pandas-ta-classic==0.6.52
-numba>=0.61,<0.63
-tzdata>=2025.2
