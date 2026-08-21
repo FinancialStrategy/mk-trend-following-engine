@@ -1,0 +1,33 @@
+MK Trend Following Analytics Engine v0.08.5
+ORIGINAL YAHOO FETCH RESTORATION
+By Murat Konuklar
+============================================================
+Python compile: PASS
+Original Yahoo yf.download contract: MATCH
+keepna=False: RESTORED
+Multi-route consensus: REMOVED
+query1/query2 comparison: REMOVED
+Exchange-calendar gap enforcement: REMOVED
+Ticker.history retry: REMOVED
+Returned-row strict validation: RETAINED
+Golden Master regression: PASS
+Synthetic market data: NO
+Alternate provider: NO
+Forward/back fill: NO
+
+PASS — v0.08.5 original Yahoo fetch restoration
+Original yf.download contract: MATCH
+keepna=False: RESTORED
+Multi-route consensus: REMOVED
+query1/query2 cross-comparison: REMOVED
+Exchange-calendar gap enforcement: REMOVED
+Ticker.history retry: REMOVED
+Returned-row strict validation: RETAINED
+Alternate provider: NO
+Synthetic/fill logic: NO
+
+PASS — Golden Master replication
+Observations: 1,043
+Final Strategy: 1,449,095.223507
+Final Buy & Hold: 747,161.572052
+No live market data was requested by this test.

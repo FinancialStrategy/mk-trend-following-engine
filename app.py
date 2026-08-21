@@ -13,7 +13,7 @@ from MK_Trend_Following_Engine_v001 import (
     DataIntegrityError,
     MarketDataError,
 )
-from MK_Yahoo_Session_Aware_Strict_v0083 import YahooFinanceAdapter
+from MK_Yahoo_Original_Fetch_v0085 import YahooFinanceAdapter
 from MK_Trend_Following_Decision_Engine_v002 import (
     decision_snapshot,
     trade_ledger,
@@ -64,7 +64,7 @@ from MK_Institutional_Tactical_v007 import (
 )
 
 
-APP_VERSION = "v0.08.3"
+APP_VERSION = "v0.08.5"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -1281,26 +1281,23 @@ with tabs[0]:
                     )
                 if _a.get("recovered_sessions"):
                     st.info(
-                        f"{_role} — completed sessions recovered from another Yahoo-only route: "
+                        f"{_role} — recent completed sessions recovered by targeted Yahoo-only retry: "
                         + ", ".join(_a.get("recovered_sessions", []))
                     )
-
-            for _role, _a in [("Asset", asset_yahoo_audit), ("Benchmark", benchmark_yahoo_audit)]:
-                if not _a:
-                    continue
-                if int(_a.get("precision_normalized_matches", 0) or 0) > 0:
-                    st.caption(
-                        f"{_role} — {_a.get('precision_normalized_matches', 0)} cross-route values differed only "
-                        f"within the machine-precision envelope; maximum spread "
-                        f"{float(_a.get('max_precision_spread_bps', 0.0) or 0.0):.6f} bps. "
-                        "The highest-priority observed Yahoo value was retained; no averaging was performed."
+                if _a.get("historical_missing_sessions"):
+                    _hist = _a.get("historical_missing_sessions", [])
+                    st.warning(
+                        f"{_role} — {len(_hist)} older historical XIST session gap(s) detected in Yahoo. "
+                        "They are disclosed for backtest/risk-quality review but do not block the current live decision. "
+                        "No values were filled. Examples: " + ", ".join(_hist[:8])
                     )
 
             st.caption(
-                "Governance: Yahoo Finance only. BIST daily data is checked against the XIST session calendar. "
-                "Closed-day placeholders are not treated as market observations; unfinished daily sessions are withheld. "
-                "Every completed trading session must be present. No forward/back fill, temporal interpolation, "
-                "Close→Adj Close substitution, or alternate-provider fallback is permitted."
+                "Governance: Yahoo Finance only. The stable primary fetch again uses yfinance.download with keepna=False, "
+                "matching the original working acquisition behavior. Returned rows remain strictly validated. "
+                "For BIST daily data, recent completed-session coverage is enforced; older historical gaps are disclosed "
+                "as audit warnings rather than blocking the live decision. No fill, interpolation, Close→Adj Close "
+                "substitution, averaging, or alternate-provider fallback is permitted."
             )
         st.markdown(
             f"<div class='section-note'><b>Benchmark:</b> {benchmark_name(benchmark_ticker_used)} "
