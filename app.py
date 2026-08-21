@@ -28,14 +28,14 @@ from MK_Trend_Following_Decision_Engine_v002 import (
     trade_statistics,
     active_stop_column,
 )
-from MK_Trend_Following_Universe_v002 import (
+from MK_Trend_Following_Universe_v0087 import (
     market_names,
     groups_for,
     instruments_for,
     flat_universe_rows,
 )
-from MK_Institutional_Risk_Analytics_v008 import (
-    VaRConfig,
+from MK_Institutional_Risk_Analytics_v0087 import (
+    VaRConfig, infer_periodicity,
     rolling_window_options,
     rolling_risk_frame,
     risk_state_snapshot,
@@ -52,7 +52,7 @@ from MK_Trend_Following_Entry_Gate_v005 import (
     latest_execution_events,
 )
 from MK_Trend_Following_HTML_Report_v003 import build_html
-from MK_Nadaraya_Watson_Trend_v006 import (
+from MK_Nadaraya_Watson_Trend_v0087 import (
     NWConfig,
     NWStrategyConfig,
     KERNELS as NW_KERNELS,
@@ -60,10 +60,13 @@ from MK_Nadaraya_Watson_Trend_v006 import (
     run_nw_strategy,
     nw_decision_snapshot,
     kernel_weight_profile,
-    strategy_mode_label,
+    strategy_mode_label, nw_alert_ledger,
 )
-from MK_Nadaraya_Watson_HTML_Report_v006 import build_nw_html_report
-from MK_Benchmark_Relative_v007 import (
+from MK_Nadaraya_Watson_HTML_Report_v0087 import build_nw_html_report
+from MK_Nadaraya_Watson_Visuals_v0087 import (
+    NWVisualConfig, THEMES as NW_VISUAL_THEMES, build_nw_price_figure, regime_path_series,
+)
+from MK_Benchmark_Relative_v0087 import (
     RelativeConfig, default_benchmark, benchmark_name,
     compute_relative_analytics, relative_snapshot,
 )
@@ -72,7 +75,7 @@ from MK_Institutional_Tactical_v0086 import (
 )
 
 
-APP_VERSION = "v0.08.6"
+APP_VERSION = "v0.08.7"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -464,85 +467,15 @@ def make_strategy_rolling_risk_chart(df, rolling, spec):
     return fig
 
 
-def make_nw_overlay_chart(df, nw_cfg):
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(
-        x=df.index,
-        open=df["AdjOpen"], high=df["AdjHigh"], low=df["AdjLow"], close=df["AdjCloseCalc"],
-        name="Adjusted OHLC",
-        increasing_line_color="#334155", decreasing_line_color="#94A3B8",
-        increasing_fillcolor="#FFFFFF", decreasing_fillcolor="#E2E8F0",
-        whiskerwidth=0.25,
-    ))
-
-    bull = df["NWTrend"].where(df["NWDirection"] > 0)
-    bear = df["NWTrend"].where(df["NWDirection"] < 0)
-    flat = df["NWTrend"].where(df["NWDirection"] == 0)
-
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["NWLower"], mode="lines", name="NW Lower Residual Band",
-        line=dict(width=0.9, color="#94A3B8"), hovertemplate="%{x}<br>Lower: %{y:,.2f}<extra></extra>"
-    ))
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["NWUpper"], mode="lines", name="NW Upper Residual Band",
-        line=dict(width=0.9, color="#94A3B8"), fill="tonexty", fillcolor="rgba(148,163,184,0.08)",
-        hovertemplate="%{x}<br>Upper: %{y:,.2f}<extra></extra>"
-    ))
-    fig.add_trace(go.Scatter(
-        x=df.index, y=bull, mode="lines", name="NW Bullish Path",
-        line=dict(width=2.1, color="#0F766E"), connectgaps=False,
-        hovertemplate="%{x}<br>NW Trend: %{y:,.2f}<extra></extra>"
-    ))
-    fig.add_trace(go.Scatter(
-        x=df.index, y=bear, mode="lines", name="NW Bearish Path",
-        line=dict(width=2.1, color="#B91C1C"), connectgaps=False,
-        hovertemplate="%{x}<br>NW Trend: %{y:,.2f}<extra></extra>"
-    ))
-    fig.add_trace(go.Scatter(
-        x=df.index, y=flat, mode="lines", name="NW Flat Path",
-        line=dict(width=1.4, color="#64748B"), connectgaps=False,
-    ))
-
-    bull_rev = df["NWBullishReversal"].fillna(False).astype(bool)
-    bear_rev = df["NWBearishReversal"].fillna(False).astype(bool)
-    fig.add_trace(go.Scatter(
-        x=df.index[bull_rev], y=df.loc[bull_rev, "NWTrend"], mode="markers", name="Bullish Kernel Reversal",
-        marker=dict(symbol="triangle-up", size=10, color="#0F766E", line=dict(width=0.5, color="#FFFFFF")),
-    ))
-    fig.add_trace(go.Scatter(
-        x=df.index[bear_rev], y=df.loc[bear_rev, "NWTrend"], mode="markers", name="Bearish Kernel Reversal",
-        marker=dict(symbol="triangle-down", size=10, color="#B91C1C", line=dict(width=0.5, color="#FFFFFF")),
-    ))
-
-    buys = df["FirstBuy"].fillna(0).gt(0)
-    sells = df["FirstSell"].fillna(0).gt(0)
-    fig.add_trace(go.Scatter(
-        x=df.index[buys], y=df.loc[buys, "AdjOpen"], mode="markers", name="NW Strategy BUY",
-        marker=dict(symbol="triangle-up", size=13, color="#111827"),
-        hovertemplate="%{x}<br>Executed BUY: %{y:,.2f}<extra></extra>"
-    ))
-    fig.add_trace(go.Scatter(
-        x=df.index[sells], y=df.loc[sells, "AdjOpen"], mode="markers", name="NW Strategy SELL",
-        marker=dict(symbol="triangle-down", size=13, color="#7C2D12"),
-        hovertemplate="%{x}<br>Executed SELL: %{y:,.2f}<extra></extra>"
-    ))
-
-    fig.update_layout(
-        title=dict(
-            text=f"Nadaraya-Watson Trend — {nw_cfg.kernel} Kernel | Lookback {nw_cfg.lookback} | h={nw_cfg.effective_bandwidth:g}",
-            x=0.01, xanchor="left", y=0.955, yanchor="top",
-            font=dict(size=15, color="#0F172A"), pad=dict(t=4, b=4)
+def make_nw_overlay_chart(df, nw_cfg, visual_cfg):
+    return build_nw_price_figure(
+        df, nw_cfg, visual_cfg,
+        range_selector=RANGE_SELECTOR,
+        title=(
+            f"Nadaraya-Watson Trend [QuantAlgo Public-Methodology Visual Translation] — "
+            f"{nw_cfg.kernel} | Lookback {nw_cfg.lookback} | h={nw_cfg.effective_bandwidth:g}"
         ),
-        template="plotly_white", height=690, hovermode="x unified",
-        margin=dict(l=45, r=25, t=126, b=35),
-        legend=dict(orientation="h", y=1.03, x=1, xanchor="right", yanchor="bottom"),
-        xaxis_rangeslider_visible=False,
-        paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
-        font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif", size=11, color="#334155"),
     )
-    fig.update_xaxes(rangeselector=RANGE_SELECTOR, showgrid=False)
-    fig.update_yaxes(title_text="Adjusted Price / NW Estimate", gridcolor="#E2E8F0")
-    return fig
 
 
 def make_nw_equity_chart(df):
@@ -619,10 +552,29 @@ def make_tactical_envelope_chart(df, benchmark_ticker):
         x=df.index,y=df["NWUpper"],mode="lines",name="NW Upper Band",
         line=dict(width=1.0,color="#B45309")
     ),row=1,col=1)
+    _bull_path,_bear_path,_flat_path=regime_path_series(df)
     fig.add_trace(go.Scatter(
-        x=df.index,y=df["NWTrend"],mode="lines",name="NW Trend",
-        line=dict(width=1.8,color="#0F172A")
+        x=df.index,y=_bull_path,mode="lines",name="NW Bullish Path",
+        line=dict(width=2.4,color="#00E676"),connectgaps=False
     ),row=1,col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index,y=_bear_path,mode="lines",name="NW Bearish Path",
+        line=dict(width=2.4,color="#FF1744"),connectgaps=False
+    ),row=1,col=1)
+    _br=df["NWBullishReversal"].fillna(False); _sr=df["NWBearishReversal"].fillna(False)
+    _buy_y=df["NWBullishMarkerY"] if "NWBullishMarkerY" in df else df["NWTrend"]
+    _sell_y=df["NWBearishMarkerY"] if "NWBearishMarkerY" in df else df["NWTrend"]
+    fig.add_trace(go.Scatter(x=df.index[_br],y=_buy_y[_br],mode="markers",name="Bullish Kernel Reversal",
+                             marker=dict(symbol="triangle-up",size=10,color="#00E676")),row=1,col=1)
+    fig.add_trace(go.Scatter(x=df.index[_sr],y=_sell_y[_sr],mode="markers",name="Bearish Kernel Reversal",
+                             marker=dict(symbol="triangle-down",size=10,color="#FF1744")),row=1,col=1)
+    _mu=df.get("NWMomentumUpwardWarning",pd.Series(False,index=df.index)).fillna(False)
+    _md=df.get("NWMomentumDownwardWarning",pd.Series(False,index=df.index)).fillna(False)
+    _muy=df.get("NWMomentumUpMarkerY",df["NWTrend"]); _mdy=df.get("NWMomentumDownMarkerY",df["NWTrend"])
+    fig.add_trace(go.Scatter(x=df.index[_mu],y=_muy[_mu],mode="markers",name="Momentum Upward — MK Warning",
+                             marker=dict(symbol="arrow-up",size=9,color="#0891B2")),row=1,col=1)
+    fig.add_trace(go.Scatter(x=df.index[_md],y=_mdy[_md],mode="markers",name="Momentum Downward — MK Warning",
+                             marker=dict(symbol="arrow-down",size=9,color="#D97706")),row=1,col=1)
     fig.add_trace(go.Scatter(
         x=df.index,y=df["NWLower"],mode="lines",name="NW Lower Band",
         line=dict(width=1.0,color="#64748B")
@@ -968,6 +920,37 @@ with st.sidebar:
         help="MK strategy risk filter: do not initiate a new long when price is already beyond the upper residual envelope.",
     )
 
+    with st.expander("NW QuantAlgo Visual & Alert Layer", expanded=True):
+        nw_visual_theme = st.selectbox(
+            "Visual Theme",
+            ["Classic", "Aqua", "Cosmic", "Cyber", "Neon", "Institutional Light", "Custom"],
+            index=0, disabled=not nw_enabled,
+            help="QuantAlgo publicly documents Classic/Aqua/Cosmic/Cyber/Neon/Custom visual presets. Exact proprietary colour hex values are not copied; the signal semantics are reproduced independently.",
+        )
+        nw_dark_background = st.toggle("TradingView-style Dark NW Chart", value=True, disabled=not nw_enabled)
+        vc1, vc2 = st.columns(2)
+        with vc1:
+            nw_show_glow = st.toggle("Gradient / Glow Path", value=True, disabled=not nw_enabled)
+            nw_show_bands = st.toggle("Residual Bands", value=True, disabled=not nw_enabled)
+            nw_show_reversals = st.toggle("Kernel Reversal Markers", value=True, disabled=not nw_enabled)
+            nw_show_band_alerts = st.toggle("Upper / Lower Band Alerts", value=True, disabled=not nw_enabled)
+        with vc2:
+            nw_show_momentum = st.toggle("Momentum Up / Down Warnings", value=True, disabled=not nw_enabled)
+            nw_color_bars = st.toggle("Trend-Colour Candles", value=True, disabled=not nw_enabled)
+            nw_tint_background = st.toggle("Trend Background Tint", value=False, disabled=not nw_enabled)
+        if nw_visual_theme == "Custom":
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                nw_custom_bull = st.color_picker("Bullish Colour", value="#00E676", disabled=not nw_enabled)
+            with cc2:
+                nw_custom_bear = st.color_picker("Bearish Colour", value="#FF1744", disabled=not nw_enabled)
+        else:
+            nw_custom_bull, nw_custom_bear = "#00E676", "#FF1744"
+        st.caption(
+            "Verified public QuantAlgo alerts: Bullish Kernel Reversal, Bearish Kernel Reversal, Any Kernel Reversal, "
+            "Source Cross Above Upper Band, Source Cross Below Lower Band. Momentum Up/Down warnings are an MK causal extension."
+        )
+
 
     st.divider()
     st.subheader("Institutional Tactical Layer")
@@ -1045,7 +1028,7 @@ with st.sidebar:
 
 
 # ---------------------------- State ----------------------------
-STATE_SCHEMA_VERSION = 5
+STATE_SCHEMA_VERSION = 6
 _previous_schema = st.session_state.get("_state_schema_version")
 if _previous_schema != STATE_SCHEMA_VERSION:
     # Clear only computed analysis objects from an older deployed code schema.
@@ -1109,7 +1092,7 @@ if run_clicked:
             )
             asset_yahoo_audit = dict(raw.attrs.get("yahoo_audit", {}))
             result = run_legacy_engine(raw, cfg)
-            summary = performance_summary(result, initial_capital=cfg.initial_capital)
+            summary = performance_summary(result, initial_capital=cfg.initial_capital, periods_per_year=infer_periodicity(result.index)[0])
             decision = decision_snapshot(result, cfg)
             trades = trade_ledger(result)
             tstats = trade_statistics(trades)
@@ -1132,14 +1115,27 @@ if run_clicked:
                     avoid_upper_band_chase=bool(nw_avoid_chase),
                     initial_capital=float(initial_capital),
                 )
+                nw_visual_cfg = NWVisualConfig(
+                    theme=nw_visual_theme,
+                    dark_background=bool(nw_dark_background),
+                    show_glow=bool(nw_show_glow),
+                    show_residual_bands=bool(nw_show_bands),
+                    show_reversal_markers=bool(nw_show_reversals),
+                    show_band_alerts=bool(nw_show_band_alerts),
+                    show_momentum_warnings=bool(nw_show_momentum),
+                    color_bars_by_trend=bool(nw_color_bars),
+                    tint_background_by_trend=bool(nw_tint_background),
+                    custom_bull=nw_custom_bull,
+                    custom_bear=nw_custom_bear,
+                )
                 nw_indicator = compute_nadaraya_watson(result, nw_cfg)
                 nw_result = run_nw_strategy(result, nw_indicator, nw_scfg)
-                nw_summary = performance_summary(nw_result, initial_capital=nw_scfg.initial_capital)
+                nw_summary = performance_summary(nw_result, initial_capital=nw_scfg.initial_capital, periods_per_year=infer_periodicity(nw_result.index)[0])
                 nw_decision = nw_decision_snapshot(nw_result, nw_scfg)
                 nw_trades = trade_ledger(nw_result)
                 nw_tstats = trade_statistics(nw_trades)
             else:
-                nw_cfg = nw_scfg = nw_indicator = nw_result = None
+                nw_cfg = nw_scfg = nw_visual_cfg = nw_indicator = nw_result = None
                 nw_summary = nw_decision = nw_trades = nw_tstats = None
 
             if tactical_enabled:
@@ -1200,6 +1196,7 @@ if run_clicked:
         st.session_state.nw_indicator = nw_indicator
         st.session_state.nw_config = nw_cfg
         st.session_state.nw_strategy_config = nw_scfg
+        st.session_state.nw_visual_config = nw_visual_cfg
         st.session_state.nw_summary = nw_summary
         st.session_state.nw_decision = nw_decision
         st.session_state.nw_trades = nw_trades
@@ -1244,6 +1241,7 @@ nw_result = st.session_state.get("nw_result")
 nw_indicator = st.session_state.get("nw_indicator")
 nw_cfg = st.session_state.get("nw_config")
 nw_scfg = st.session_state.get("nw_strategy_config")
+nw_visual_cfg = st.session_state.get("nw_visual_config")
 nw_summary = st.session_state.get("nw_summary")
 nw_decision = st.session_state.get("nw_decision")
 nw_trades = st.session_state.get("nw_trades")
@@ -1445,6 +1443,11 @@ with tabs[3]:
             {"Layer":"Trend Regime","Rule":"NW slope > 0 = bullish; NW slope < 0 = bearish","Action":"Directional state","Current Setting":nw_decision["trend_direction"]},
             {"Layer":"Bullish Reversal","Rule":"NW slope flips non-positive → positive","Action":"BUY / restore candidate","Current Setting":"TRIGGERED" if nw_decision["bullish_reversal"] else "No"},
             {"Layer":"Bearish Reversal","Rule":"NW slope flips non-negative → negative","Action":"REDUCE / SELL candidate","Current Setting":"TRIGGERED" if nw_decision["bearish_reversal"] else "No"},
+            {"Layer":"Public Alert 3/5","Rule":"Any Kernel Reversal = bullish OR bearish kernel reversal","Action":"Monitoring alert","Current Setting":"TRIGGERED" if (nw_decision["bullish_reversal"] or nw_decision["bearish_reversal"]) else "No"},
+            {"Layer":"Public Alert 4/5","Rule":"Source crosses above NW Upper residual band","Action":"Overextension alert","Current Setting":"TRIGGERED" if nw_decision["cross_above_upper"] else "No"},
+            {"Layer":"Public Alert 5/5","Rule":"Source crosses below NW Lower residual band","Action":"Breakdown alert","Current Setting":"TRIGGERED" if nw_decision["cross_below_lower"] else "No"},
+            {"Layer":"MK Momentum Upward","Rule":"Normalized NW slope acceleration turns positive before bullish slope confirmation","Action":"Early upward-momentum warning","Current Setting":"TRIGGERED" if nw_decision["momentum_upward_warning"] else "No"},
+            {"Layer":"MK Momentum Downward","Rule":"Normalized NW slope acceleration turns negative before bearish slope confirmation","Action":"Early downward-momentum warning","Current Setting":"TRIGGERED" if nw_decision["momentum_downward_warning"] else "No"},
             {"Layer":"Upper Envelope","Rule":"Source crosses above NW Upper residual band","Action":"Immediate tactical trim; overextension alert","Current Setting":f"Upper={nw_decision['upper']:.2f}"},
             {"Layer":"Upper Re-entry","Rule":"Source returns below Upper band after excursion","Action":"Deeper reduction / exhaustion confirmation","Current Setting":"Primary Tactical rule"},
             {"Layer":"Lower Envelope","Rule":"Source crosses below NW Lower band + bearish slope","Action":"SELL 100% candidate","Current Setting":f"Lower={nw_decision['lower']:.2f}"},
@@ -1470,7 +1473,16 @@ with tabs[3]:
         n7.metric("NW Closed Trades", f"{nw_tstats['closed_trades']:,}")
 
         st.markdown("#### Nadaraya-Watson Price Structure")
-        st.plotly_chart(make_nw_overlay_chart(nw_result, nw_cfg), width="stretch", config=PLOT_CFG, key="plotly_v00853_04_L1444")
+        st.plotly_chart(make_nw_overlay_chart(nw_result, nw_cfg, nw_visual_cfg), width="stretch", config=PLOT_CFG, key="plotly_v00853_04_L1444")
+        _nw_alerts = nw_alert_ledger(nw_result)
+        if len(_nw_alerts):
+            st.markdown("#### NW Alert Tape — QuantAlgo Public Alerts + MK Momentum Warnings")
+            st.dataframe(
+                _nw_alerts.sort_values("Date", ascending=False).head(40),
+                width="stretch", hide_index=True, height=360,
+            )
+        else:
+            st.caption("No NW reversal / band-cross / momentum-warning events occurred in the selected sample after warm-up.")
 
         left,right = st.columns([1.2,1])
         with left:
@@ -1545,7 +1557,7 @@ with tabs[3]:
         st.download_button(
             "Export Nadaraya-Watson Interactive HTML",
             data=nw_html.encode("utf-8"),
-            file_name=f"MK_Nadaraya_Watson_{ticker_used}_{interval_used}_v006.html",
+            file_name=f"MK_Nadaraya_Watson_{ticker_used}_{interval_used}_v0087.html",
             mime="text/html",
             width="stretch",
         )
@@ -1723,7 +1735,7 @@ with tabs[7]:
 
 with tabs[8]:
     if tactical_enabled_used and tactical_result is not None:
-        _cols=["Open","High","Low","Close","Volume","Adj Close","AdjCloseCalc","NWTrend","NWUpper","NWLower","NWEnvelopeZ","NWSlope","NWDirection","NWCrossAboveUpper","NWReenterBelowUpper","NWCrossBelowLower","BenchmarkPrice","RollingBeta","ResidualZ","ResidualDriftZ","PriceRatioZ","RelativeVolume","TacticalAction","TacticalTargetExposure","TacticalExposure","TacticalPortfolio","TacticalRationale"]
+        _cols=["Open","High","Low","Close","Volume","Adj Close","AdjCloseCalc","NWTrend","NWUpper","NWLower","NWEnvelopeZ","NWSlope","NWNormalizedSlope","NWSlopeAcceleration","NWDirection","NWBullishReversal","NWBearishReversal","NWMomentumUpwardWarning","NWMomentumDownwardWarning","NWCrossAboveUpper","NWReenterBelowUpper","NWCrossBelowLower","BenchmarkPrice","RollingBeta","ResidualZ","ResidualDriftZ","PriceRatioZ","RelativeVolume","TacticalAction","TacticalTargetExposure","TacticalExposure","TacticalPortfolio","TacticalRationale"]
         _cols=[c for c in _cols if c in tactical_result.columns]
         st.dataframe(tactical_result[_cols].sort_index(ascending=False),width="stretch",height=650)
         _csv=tactical_result[_cols].reset_index().to_csv(index=False).encode("utf-8")
@@ -1756,7 +1768,7 @@ The NW module independently implements the public QuantAlgo methodology: a **one
 
 Trend direction is the bar-to-bar slope of the NW estimate. A bullish reversal is a non-positive → positive slope transition; a bearish reversal is a non-negative → negative transition. Because only past/current observations are used, appended future bars cannot rewrite a historical NW estimate.
 
-**Attribution:** methodology reference is *Nadaraya-Watson Trend [QuantAlgo]* on TradingView. The Pine source is not redistributed verbatim in this project. Numeric MK presets and the portfolio strategy rules are our own research layer.
+**Attribution:** methodology reference is *Nadaraya-Watson Trend [QuantAlgo]* on TradingView. The Pine source is not redistributed verbatim. The public estimator/slope/reversal/band-alert semantics are independently implemented. Numeric MK presets, portfolio rules, and the **Momentum Upward / Momentum Downward** early-warning layer are MK research extensions.
 
 ### MK causal NW strategy
 The indicator and the strategy are deliberately separated. The strategy reads a signal only from a **completed prior bar** and executes any trade at the **next adjusted open**. `MK Confirmed NW Trend` requires persistent bullish NW direction plus price above the path, with an optional upper-residual-band chase filter; exits occur when price loses the path or bearish direction confirms. `Public-Methodology Reversal Translation` is a simpler research translation built around bullish/bearish slope reversals and price relative to the NW path. Neither is presented as a QuantAlgo trading recommendation.

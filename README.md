@@ -1,9 +1,21 @@
-# MK Trend Following Analytics Engine v0.06
+# MK Trend Following Analytics Engine v0.08.7
 
 **By Murat Konuklar**  
 MK FinTECH LabGEN @2026 ATELIER ISTANBUL
 
 Institutional Streamlit trend-following research engine with validated legacy Excel replication plus a causal Nadaraya-Watson Trend research layer.
+
+## v0.08.7 current production additions
+
+- Copper Futures (`HG=F`) under Industrial Metals.
+- 12 major non-stable cryptocurrencies with Yahoo USD symbols.
+- QuantAlgo-style causal Nadaraya-Watson visual layer: green/red slope-coloured path, Pine-style turn-segment timing, residual envelope, bullish/bearish reversal markers, band-cross markers, visual presets, optional trend-coloured candles/background.
+- Five publicly documented QuantAlgo alert families are represented independently.
+- `Momentum Upward` / `Momentum Downward` are clearly labelled MK causal early-warning extensions, not QuantAlgo built-ins.
+- Crypto-aware 7-day annualization for daily and intraday risk analytics.
+- v0.08.6 Tactical accounting integrity, v0.08.5.2 Yahoo rate-limit cache/backoff, and Plotly unique-key fixes remain intact.
+
+See `V0087_CRYPTO_COPPER_QUANTALGO_VISUAL.md` for the current integration notes.
 
 ## Live market-data governance
 
