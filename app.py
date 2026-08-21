@@ -78,9 +78,10 @@ from MK_Intraday_Tactical_Lab_v0088 import (
     withhold_incomplete_intraday_bar, compute_intraday_features, intraday_snapshot,
 )
 from MK_Intraday_Visuals_v0088 import build_intraday_tactical_figure
+from MK_Tactical_Visual_Governance_v00882 import apply_tactical_envelope_visual_governance
 
 
-APP_VERSION = "v0.08.8.1"
+APP_VERSION = "v0.08.8.2"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -620,19 +621,13 @@ def make_tactical_envelope_chart(df, benchmark_ticker):
                   -tactical_cfg.weak_z,-tactical_cfg.strong_z,-tactical_cfg.extreme_z]:
             fig.add_hline(y=y,line_width=0.7,line_dash="dot",line_color="#CBD5E1",row=2,col=1)
 
-    fig.update_layout(
-        title=dict(text="Institutional Tactical Envelope + Benchmark Relative Deviation",
-                   x=0.01,xanchor="left",y=0.955,yanchor="top",font=dict(size=15),pad=dict(t=4,b=4)),
-        template="plotly_white",height=760,hovermode="x unified",
-        margin=dict(l=50,r=35,t=125,b=35),
-        legend=dict(orientation="h",y=1.035,x=1,xanchor="right"),
-        font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif",size=11,color="#334155"),
-        xaxis_rangeslider_visible=False,
-    )
+    # Dedicated institutional legend/control rail. The legend and range selector
+    # live entirely above the plotting domain, so neither can mask price action,
+    # NW turns, warning markers or envelope events.
+    apply_tactical_envelope_visual_governance(fig, benchmark_ticker, RANGE_SELECTOR)
     fig.update_yaxes(title_text="Adjusted Price / NW Envelope",row=1,col=1,gridcolor="#E2E8F0")
     fig.update_yaxes(title_text="Relative Drift Z",row=2,col=1,secondary_y=False,gridcolor="#E2E8F0")
     fig.update_yaxes(title_text="RVOL",row=2,col=1,secondary_y=True)
-    fig.update_xaxes(rangeselector=RANGE_SELECTOR,rangeslider=dict(visible=False),row=1,col=1)
     return fig
 
 
@@ -1032,7 +1027,7 @@ with st.sidebar:
             intraday_slot_rvol_sessions = st.number_input("Same-Slot RVOL Sessions", min_value=3, max_value=30, value=10, step=1, disabled=not intraday_lab_enabled)
             intraday_realized_vol_window = st.number_input("Realized Vol Window (bars)", min_value=8, max_value=200, value=32, step=1, disabled=not intraday_lab_enabled)
         st.caption(
-            "Intraday Confirmation is diagnostic-only in v0.08.8.1: it does not silently override Institutional Tactical exposure. "
+            "Intraday Confirmation is diagnostic-only in v0.08.8.2: it does not silently override Institutional Tactical exposure. "
             "The primary portfolio still follows completed-bar → next-open execution."
         )
 
@@ -1446,7 +1441,7 @@ if tactical_enabled_used and tactical_decision is not None:
     k5.metric("Rolling Beta", fmt_num(tactical_decision["beta"]))
     k6.metric("NW Envelope Z", fmt_num(tactical_decision["envelope_z"]))
     k7.metric("Benchmark", benchmark_ticker_used or "—")
-    k8.metric("Decision Source", "Tactical v0.08.8.1")
+    k8.metric("Decision Source", "Tactical v0.08.8.2")
 else:
     k1.metric("PRIMARY Decision", "NO DECISION")
     k2.metric("Target Exposure", "—")
@@ -1954,7 +1949,7 @@ Relative analytics use exact-timestamp inner alignment only. Missing benchmark b
 
 ### 15-Minute Intraday Governance
 Yahoo Finance supports 15-minute data, but intraday history is restricted to the most recent 60 days.
-The engine hard-stops requests beyond that horizon instead of silently truncating the analysis. v0.08.8.1 also explicitly withholds a timezone-verifiable in-progress 15-minute bar before any NW, relative, Tactical, risk or intraday calculations run.
+The engine hard-stops requests beyond that horizon instead of silently truncating the analysis. v0.08.8.2 also explicitly withholds a timezone-verifiable in-progress 15-minute bar before any NW, relative, Tactical, risk or intraday calculations run.
 
 The Intraday Tactical Lab is additive: it derives session VWAP, causal opening range, same-slot relative volume, intraday ATR, rolling realized volatility, session gap/drawdown and an explainable confirmation score from the already-fetched Yahoo bars. It does not request a second provider and does not silently alter the primary Tactical target exposure. Auto session models are BIST cash (Istanbul), US cash (New York), Crypto 24/7 (UTC day), and CME/COMEX metals (18:00–17:00 New York).
 
@@ -1980,7 +1975,7 @@ with tabs[1]:
         st.markdown(
             "<div class='section-note'><b>15m execution-quality layer:</b> session VWAP, causal opening range, same-time-slot relative volume, "
             "rolling intraday ATR/realized volatility, session drawdown, Nadaraya-Watson state and benchmark-relative drift. "
-            "The confirmation score is diagnostic-only in v0.08.8.1 and does not silently override the Institutional Tactical target exposure.</div>",
+            "The confirmation score is diagnostic-only in v0.08.8.2 and does not silently override the Institutional Tactical target exposure.</div>",
             unsafe_allow_html=True,
         )
         st.caption(
