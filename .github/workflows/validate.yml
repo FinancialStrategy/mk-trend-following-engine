@@ -114,6 +114,12 @@ jobs:
 
       - name: Yahoo session-aware strict validation v0.08.2
         run: |
-          python -m py_compile MK_Yahoo_Session_Aware_Strict_v0082.py
+          python -m py_compile MK_Yahoo_Session_Aware_Strict_v0083.py
           python -m py_compile app.py
           python yahoo_session_aware_validation_v0082.py
+
+      - name: Yahoo precision-aware consensus validation v0.08.3
+        run: |
+          python -m py_compile MK_Yahoo_Session_Aware_Strict_v0083.py
+          python -m py_compile app.py
+          python yahoo_precision_consensus_validation_v0083.py
