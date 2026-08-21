@@ -1,0 +1,103 @@
+MK Trend Following Analytics Engine v0.08.8.1
+INTRADAY VISIBILITY & TARGET EXPOSURE HOTFIX
+By Murat Konuklar
+============================================================
+Python compile: PASS
+15m sidebar discoverability: PASS
+15m pre-run selected banner: PASS
+15m completed-run active banner: PASS
+15m Intraday Tactical Lab promoted to tab #2: PASS
+15-Minute title suffix across Plotly surfaces: PASS
+Dedicated 0/25/50/75/100 Target Exposure staircase panel: PASS
+Plotly explicit-key protection: PASS
+Yahoo rate-limit stability regression: PASS
+Intraday causality regression: PASS
+Crypto/Copper/NW regression: PASS
+Tactical accounting regression: PASS
+Golden Master regression: PASS
+Signal mathematics changed: NO
+Yahoo acquisition changed: NO
+Synthetic market data: NO
+Alternate provider: NO
+Local Streamlit headless boot: NOT RUN (Streamlit executable unavailable in this container; GitHub workflow retains the headless health test after dependency installation)
+
+=== smoke_test.py ===
+PASS — Golden Master replication
+Observations: 1,043
+Final Strategy: 1,449,095.223507
+Final Buy & Hold: 747,161.572052
+No live market data was requested by this test.
+
+=== yahoo_rate_limit_validation_v00852.py ===
+PASS — Yahoo rate-limit stable fetch regression under v0.08.8.1
+Same yf.download path retry: PASS
+Empty payload -> bounded backoff -> real Yahoo observation: PASS
+Successful data alteration: NO
+Streamlit request cache: PRESENT
+use_container_width deprecation: REMOVED
+Alternate market-data provider: NO
+Synthetic/fill data: NO
+
+=== tactical_accounting_validation_v0086.py ===
+PASS — Tactical accounting integrity v0.08.6
+Real market observations used: GE Golden Master
+Initial Tactical exposure: 100%
+Hidden daily constant-mix rebalancing: REMOVED
+Trade only on target change: PASS
+Independent Buy & Hold construction: PASS
+Target vs actual exposure separation: PASS
+Tactical/B&H wealth-ratio invariance at full exposure: PASS
+Synthetic market prices: NO
+
+=== tactical_surface_validation_v0086.py ===
+PASS — Tactical surface validation v0.08.6
+Target exposure staircase: PRESENT
+Actual exposure overlay: PRESENT
+Tactical/B&H wealth ratio: PRESENT
+Next-target vs current-target semantics: EXPLICIT
+Cash carry input: PRESENT
+Old Tactical v0.07.1 UI label: REMOVED
+Plotly unique keys: PASS
+
+=== plotly_unique_key_validation_v00853.py ===
+PASS — Plotly unique-key regression under v0.08.8.1
+Central direct Streamlit renderer calls: 1
+Wrapped Plotly chart calls: 16
+Unique explicit keys: 16
+DuplicateElementId protection: PASS
+
+=== intraday_tactical_validation_v0088.py ===
+PASS — v0.08.8 Intraday Tactical Lab structural validation
+BIST / US / Crypto / CME session auto-mapping: PASS
+Session VWAP causality: PASS
+Opening range causality/freeze: PASS
+Same-slot RVOL prior-session-only baseline: PASS
+Intraday prefix invariance: PASS
+In-progress 15m bar explicit withholding: PASS
+15m chart surface: PASS
+All Plotly keys unique: PASS
+Synthetic market VALUES used: NO — immutable Golden Master OHLCV values used for structural fixture
+Live 15m market-performance validation: NOT CLAIMED
+
+=== intraday_visibility_validation_v00881.py ===
+PASS — v0.08.8.1 intraday visibility validation
+15m sidebar discoverability: PASS
+15m selected + active banners: PASS
+15m tab promoted to position 2: PASS
+All Plotly charts route through 15-minute title wrapper: PASS
+Dedicated Target Exposure staircase panel: PASS
+
+=== crypto_copper_nw_validation_v0087.py ===
+PASS — v0.08.7 Crypto/Copper/QuantAlgo integration
+Copper HG=F in universe: PASS
+12 major non-stable crypto Yahoo tickers: PASS
+All new assets have explicit Yahoo benchmark mapping: PASS
+QuantAlgo public reversal alert identities: PASS
+QuantAlgo public band-cross alert identities: PASS
+NW prefix invariance / causality: PASS
+Red/green Pine-style segment path + reversal markers + momentum warnings: PASS
+Crypto 7D annualization detection: PASS
+Synthetic market observations used in validation: NO
+
+=== surface_validation_v0087.py ===
+PASS — v0.08.8.1 application surface wiring

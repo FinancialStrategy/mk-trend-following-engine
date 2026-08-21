@@ -1,4 +1,4 @@
-"""Plotly visuals for MK Intraday Tactical Lab v0.08.8."""
+"""Plotly visuals for MK Intraday Tactical Lab v0.08.8.1."""
 from __future__ import annotations
 
 import numpy as np
@@ -24,9 +24,9 @@ def _split_regime_path(df: pd.DataFrame):
 
 def build_intraday_tactical_figure(df: pd.DataFrame, ticker: str, session_label: str):
     fig = make_subplots(
-        rows=4, cols=1, shared_xaxes=True,
-        row_heights=[0.48, 0.18, 0.17, 0.17], vertical_spacing=0.035,
-        specs=[[{}], [{"secondary_y": True}], [{"secondary_y": True}], [{"secondary_y": True}]],
+        rows=5, cols=1, shared_xaxes=True,
+        row_heights=[0.43, 0.16, 0.15, 0.13, 0.13], vertical_spacing=0.030,
+        specs=[[{}], [{"secondary_y": True}], [{"secondary_y": True}], [{}], [{}]],
     )
 
     fig.add_trace(go.Candlestick(
@@ -72,17 +72,37 @@ def build_intraday_tactical_figure(df: pd.DataFrame, ticker: str, session_label:
         fig.add_trace(go.Scatter(x=df.index, y=df["SessionDrawdownPct"], mode="lines", name="Session Drawdown", line=dict(color="#B91C1C", width=1.2)), row=3, col=1, secondary_y=True)
 
     if "IntradayConfirmationScore" in df.columns:
-        fig.add_trace(go.Scatter(x=df.index, y=df["IntradayConfirmationScore"], mode="lines", name="Intraday Confirmation Score", line=dict(color="#111827", width=1.8)), row=4, col=1, secondary_y=False)
-    if "TacticalTargetExposure" in df.columns:
-        fig.add_trace(go.Scatter(x=df.index, y=df["TacticalTargetExposure"] * 100.0, mode="lines", name="Tactical Target Exposure %", line_shape="hv", line=dict(color="#64748B", width=1.4, dash="dash")), row=4, col=1, secondary_y=True)
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df["IntradayConfirmationScore"], mode="lines",
+            name="Intraday Confirmation Score", line=dict(color="#111827", width=1.9)
+        ), row=4, col=1)
+        fig.add_hline(y=0, line_width=1, line_color="#CBD5E1", row=4, col=1)
+        fig.add_hline(y=50, line_width=1, line_dash="dot", line_color="#86EFAC", row=4, col=1)
+        fig.add_hline(y=-50, line_width=1, line_dash="dot", line_color="#FCA5A5", row=4, col=1)
 
-    fig.add_hline(y=0, line_width=1, line_color="#CBD5E1", row=4, col=1)
-    fig.add_hline(y=50, line_width=1, line_dash="dot", line_color="#86EFAC", row=4, col=1)
-    fig.add_hline(y=-50, line_width=1, line_dash="dot", line_color="#FCA5A5", row=4, col=1)
+    if "TacticalTargetExposure" in df.columns:
+        _target = pd.to_numeric(df["TacticalTargetExposure"], errors="coerce") * 100.0
+        fig.add_trace(go.Scatter(
+            x=df.index, y=_target, mode="lines", name="TACTICAL TARGET EXPOSURE",
+            line_shape="hv", line=dict(color="#0F172A", width=3.0),
+            fill="tozeroy", fillcolor="rgba(15,23,42,0.10)",
+            hovertemplate="%{x}<br>Target Exposure: %{y:.0f}%<extra></extra>",
+        ), row=5, col=1)
+        _chg = _target.ne(_target.shift(1)) & _target.notna()
+        if len(_chg):
+            _chg.iloc[0] = False
+        if _chg.any():
+            fig.add_trace(go.Scatter(
+                x=df.index[_chg], y=_target[_chg], mode="markers", name="Exposure Change",
+                marker=dict(size=8, symbol="diamond", color="#0F172A", line=dict(width=1, color="#FFFFFF")),
+                hovertemplate="%{x}<br>New Target: %{y:.0f}%<extra></extra>",
+            ), row=5, col=1)
+        for _tier in [0, 25, 50, 75, 100]:
+            fig.add_hline(y=_tier, line_width=0.7, line_dash="dot", line_color="#CBD5E1", row=5, col=1)
 
     fig.update_layout(
         title=dict(text=f"15-Minute Intraday Tactical Lab — {ticker}<br><sup>{session_label}</sup>", x=0.01, xanchor="left"),
-        template="plotly_white", height=980, hovermode="x unified",
+        template="plotly_white", height=1120, hovermode="x unified",
         margin=dict(l=55, r=55, t=100, b=35),
         legend=dict(orientation="h", y=1.02, x=1, xanchor="right", yanchor="bottom"),
         font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif", size=11, color="#334155"),
@@ -94,6 +114,9 @@ def build_intraday_tactical_figure(df: pd.DataFrame, ticker: str, session_label:
     fig.update_yaxes(title_text="RVOL", row=2, col=1, secondary_y=True, showgrid=False)
     fig.update_yaxes(title_text="Realized Vol", tickformat=".1%", row=3, col=1, secondary_y=False, gridcolor="#E2E8F0")
     fig.update_yaxes(title_text="Session DD", tickformat=".1%", row=3, col=1, secondary_y=True, showgrid=False)
-    fig.update_yaxes(title_text="Confirmation", range=[-105, 105], row=4, col=1, secondary_y=False, gridcolor="#E2E8F0")
-    fig.update_yaxes(title_text="Target %", range=[-5, 105], row=4, col=1, secondary_y=True, showgrid=False)
+    fig.update_yaxes(title_text="Confirmation", range=[-105, 105], row=4, col=1, gridcolor="#E2E8F0")
+    fig.update_yaxes(
+        title_text="Target Exposure", range=[-5, 105], tickvals=[0,25,50,75,100],
+        ticktext=["0%","25%","50%","75%","100%"], row=5, col=1, gridcolor="#E2E8F0"
+    )
     return fig

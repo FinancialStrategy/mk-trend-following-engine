@@ -80,7 +80,7 @@ from MK_Intraday_Tactical_Lab_v0088 import (
 from MK_Intraday_Visuals_v0088 import build_intraday_tactical_figure
 
 
-APP_VERSION = "v0.08.8"
+APP_VERSION = "v0.08.8.1"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -173,6 +173,11 @@ hr {border: 0; border-top: 1px solid #d9dde3;}
 .decision-reason {font-size:.85rem; line-height:1.55; color:#334155;}
 .micro {font-size:.75rem; color:#64748b; line-height:1.45;}
 .section-note {border-left:2px solid #cbd5e1; padding-left:10px; color:#475569; font-size:.82rem;}
+.intraday-selected-banner {border:1px solid #0f172a; border-left:5px solid #0f172a; padding:13px 16px; margin:8px 0 14px 0; background:#f8fafc;}
+.intraday-active-banner {border:1px solid #0f172a; border-left:6px solid #16a34a; padding:15px 18px; margin:8px 0 16px 0; background:#f8fafc;}
+.intraday-banner-title {font-size:.78rem; letter-spacing:.14em; font-weight:600; color:#0f172a; text-transform:uppercase;}
+.intraday-banner-main {font-size:1.35rem; font-weight:400; color:#0f172a; margin-top:3px;}
+.intraday-banner-sub {font-size:.79rem; color:#475569; line-height:1.45; margin-top:4px;}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -790,6 +795,19 @@ def _risk_horizon_text(interval,bars):
     if interval=="1mo": return f"{bars} month(s)"
     return f"{bars} bar(s)"
 
+def _plotly_chart(fig, *, width="stretch", config=None, key=None):
+    """Render Plotly with an explicit 15-minute title suffix for completed 15m runs."""
+    _active_interval = st.session_state.get("interval", "")
+    if _active_interval == "15m":
+        try:
+            _title = fig.layout.title.text or ""
+            if "15-Minute" not in str(_title):
+                fig.layout.title.text = (f"{_title} — 15-Minute Bars" if _title else "15-Minute Bars")
+        except Exception:
+            pass
+    return st.plotly_chart(fig, width=width, config=config, key=key)
+
+
 # ---------------------------- Header ----------------------------
 st.title("MK Trend Following Analytics Engine")
 st.caption(f"By Murat Konuklar  |  {APP_VERSION} Streamlit Cloud  |  Institutional Trend Systems")
@@ -831,8 +849,12 @@ with st.sidebar:
     with c2:
         end = st.date_input("End Date", value=pd.Timestamp.today().date())
 
-    interval_label = st.selectbox("Frequency", ["15 Minutes", "Daily", "Weekly", "Monthly"], index=1)
+    interval_label = st.selectbox("Frequency / Bar Size", ["15 Minutes", "Daily", "Weekly", "Monthly"], index=1, help="Select 15 Minutes to activate the dedicated Intraday Tactical Lab and 15-minute calculations.")
     interval = {"15 Minutes":"15m", "Daily":"1d", "Weekly":"1wk", "Monthly":"1mo"}[interval_label]
+    if interval == "15m":
+        st.success("15-MINUTE MODE SELECTED · Dedicated Intraday Tactical Lab will be activated after RUN ANALYSIS.")
+    else:
+        st.caption("Intraday available: select **15 Minutes** above to activate the dedicated 15m Tactical Lab.")
     intraday_history_window = "Custom Dates"
     if interval == "15m":
         intraday_history_window = st.selectbox(
@@ -1010,7 +1032,7 @@ with st.sidebar:
             intraday_slot_rvol_sessions = st.number_input("Same-Slot RVOL Sessions", min_value=3, max_value=30, value=10, step=1, disabled=not intraday_lab_enabled)
             intraday_realized_vol_window = st.number_input("Realized Vol Window (bars)", min_value=8, max_value=200, value=32, step=1, disabled=not intraday_lab_enabled)
         st.caption(
-            "Intraday Confirmation is diagnostic-only in v0.08.8: it does not silently override Institutional Tactical exposure. "
+            "Intraday Confirmation is diagnostic-only in v0.08.8.1: it does not silently override Institutional Tactical exposure. "
             "The primary portfolio still follows completed-bar → next-open execution."
         )
 
@@ -1090,6 +1112,18 @@ with st.sidebar:
     )
 
     run_clicked = st.button("RUN ANALYSIS", type="primary", width="stretch")
+
+
+if interval == "15m":
+    st.markdown(
+        f"""<div class="intraday-selected-banner">
+        <div class="intraday-banner-title">15-Minute Mode Selected</div>
+        <div class="intraday-banner-main">15m INTRADAY TACTICAL LAB</div>
+        <div class="intraday-banner-sub">Ticker <b>{ticker}</b> · Explicit Yahoo window <b>{start} → {end}</b> · History control <b>{intraday_history_window}</b>. 
+        Press <b>RUN ANALYSIS</b>; the dedicated 15m tab is positioned immediately after Executive & Primary Decision.</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
 
 # ---------------------------- State ----------------------------
@@ -1385,6 +1419,20 @@ group_used = st.session_state.group
 interval_used = st.session_state.interval
 interval_label_used = st.session_state.interval_label
 
+# ---------------------------- 15m Active Mode Banner ----------------------------
+if interval_used == "15m":
+    _latest_15m = intraday_decision.get("timestamp") if isinstance(intraday_decision, dict) else result.index[-1]
+    _session_15m = intraday_decision.get("session_label", "15-minute session model") if isinstance(intraday_decision, dict) else "15-minute session model"
+    st.markdown(
+        f"""<div class="intraday-active-banner">
+        <div class="intraday-banner-title">Intraday 15-Minute Mode Active</div>
+        <div class="intraday-banner-main">{name_used if name_used != 'Manual' else ticker_used} · {ticker_used}</div>
+        <div class="intraday-banner-sub">All chart calculations in this completed run use <b>15-minute bars</b>. Latest completed bar: <b>{_latest_15m}</b> · Session: <b>{_session_15m}</b>. 
+        Open the <b>second tab — 15m Intraday Tactical Lab</b> for VWAP, Opening Range, same-slot RVOL, realized volatility, confirmation score and the dedicated Target Exposure staircase.</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
 # ---------------------------- Executive strip ----------------------------
 st.markdown(f"### {name_used if name_used != 'Manual' else ticker_used}  ·  `{ticker_used}`")
 st.caption(f"{market_used} / {group_used}  |  {interval_label_used}  |  {summary['start'].date()} → {summary['end'].date()}  |  Primary engine: MK Institutional Tactical")
@@ -1398,7 +1446,7 @@ if tactical_enabled_used and tactical_decision is not None:
     k5.metric("Rolling Beta", fmt_num(tactical_decision["beta"]))
     k6.metric("NW Envelope Z", fmt_num(tactical_decision["envelope_z"]))
     k7.metric("Benchmark", benchmark_ticker_used or "—")
-    k8.metric("Decision Source", "Tactical v0.08.8")
+    k8.metric("Decision Source", "Tactical v0.08.8.1")
 else:
     k1.metric("PRIMARY Decision", "NO DECISION")
     k2.metric("Target Exposure", "—")
@@ -1413,6 +1461,7 @@ else:
 # ---------------------------- Main tabs ----------------------------
 tabs = st.tabs([
     "Executive & Primary Decision",
+    ("15m Intraday Tactical Lab · ACTIVE" if interval_used == "15m" else "15m Intraday Tactical Lab"),
     "Institutional Tactical",
     "Price & Signals",
     "Nadaraya-Watson Trend",
@@ -1423,7 +1472,6 @@ tabs = st.tabs([
     "Calculation Ledger",
     "Instrument Universe",
     "Methodology & Governance",
-    "15m Intraday Tactical Lab",
 ])
 
 with tabs[0]:
@@ -1479,7 +1527,7 @@ with tabs[0]:
         )
 
 
-with tabs[1]:
+with tabs[2]:
     if not tactical_enabled_used or tactical_result is None:
         st.info("Institutional Tactical Layer was disabled for this run.")
     else:
@@ -1490,7 +1538,7 @@ with tabs[1]:
             "Severe relative breakdown or lower-band failure can force a full exit.</div>",
             unsafe_allow_html=True,
         )
-        st.plotly_chart(
+        _plotly_chart(
             make_tactical_envelope_chart(tactical_result, benchmark_ticker_used),
             width="stretch",config=PLOT_CFG
         , key="plotly_v00853_01_L1371")
@@ -1506,7 +1554,7 @@ with tabs[1]:
         st.dataframe(tactical_decision["gates"],width="stretch",hide_index=True,height=300)
 
         st.markdown("#### Staged Exposure & Capital Path")
-        st.plotly_chart(make_tactical_portfolio_chart(tactical_result),width="stretch",config=PLOT_CFG, key="plotly_v00853_02_L1387")
+        _plotly_chart(make_tactical_portfolio_chart(tactical_result),width="stretch",config=PLOT_CFG, key="plotly_v00853_02_L1387")
 
         _tx = pd.to_numeric(tactical_result["TacticalTargetExposure"], errors="coerce")
         _ax = pd.to_numeric(tactical_result.get("TacticalActualExposure", tactical_result["TacticalExposure"]), errors="coerce")
@@ -1530,15 +1578,15 @@ with tabs[1]:
                   "TacticalTradedValue","TacticalTurnover","TacticalPortfolio","TacticalVsBuyHoldRatio","TacticalRationale"]
             st.dataframe(tactical_result[cols].sort_index(ascending=False),width="stretch",height=560)
 
-with tabs[2]:
+with tabs[3]:
     st.markdown(
         "<div class='section-note'><b>Client-facing signal chart:</b> adjusted price, Nadaraya-Watson path/envelope "
         "and Institutional Tactical events only.</div>",
         unsafe_allow_html=True,
     )
-    st.plotly_chart(make_primary_price_chart(result, f"{name_used} ({ticker_used})"), width="stretch", config=PLOT_CFG, key="plotly_v00853_03_L1401")
+    _plotly_chart(make_primary_price_chart(result, f"{name_used} ({ticker_used})"), width="stretch", config=PLOT_CFG, key="plotly_v00853_03_L1401")
 
-with tabs[3]:
+with tabs[4]:
     if not nw_enabled_used or nw_result is None:
         st.info("Nadaraya-Watson research layer was disabled for this run. Enable it in the sidebar and run the analysis again.")
     else:
@@ -1584,7 +1632,7 @@ with tabs[3]:
         n7.metric("NW Closed Trades", f"{nw_tstats['closed_trades']:,}")
 
         st.markdown("#### Nadaraya-Watson Price Structure")
-        st.plotly_chart(make_nw_overlay_chart(nw_result, nw_cfg, nw_visual_cfg), width="stretch", config=PLOT_CFG, key="plotly_v00853_04_L1444")
+        _plotly_chart(make_nw_overlay_chart(nw_result, nw_cfg, nw_visual_cfg), width="stretch", config=PLOT_CFG, key="plotly_v00853_04_L1444")
         _nw_alerts = nw_alert_ledger(nw_result)
         if len(_nw_alerts):
             st.markdown("#### NW Alert Tape — QuantAlgo Public Alerts + MK Momentum Warnings")
@@ -1625,7 +1673,7 @@ with tabs[3]:
             )
 
         st.markdown("#### NW Strategy Performance")
-        st.plotly_chart(make_nw_equity_chart(nw_result), width="stretch", config=PLOT_CFG, key="plotly_v00853_05_L1476")
+        _plotly_chart(make_nw_equity_chart(nw_result), width="stretch", config=PLOT_CFG, key="plotly_v00853_05_L1476")
         c1,c2,c3,c4,c5 = st.columns(5)
         c1.metric("NW Final Value", f"{nw_summary['portfolio_final']:,.0f}")
         c2.metric("Buy & Hold Final", f"{nw_summary['buyhold_final']:,.0f}")
@@ -1635,9 +1683,9 @@ with tabs[3]:
 
         c_left,c_right = st.columns(2)
         with c_left:
-            st.plotly_chart(make_nw_kernel_chart(nw_cfg), width="stretch", config=PLOT_CFG, key="plotly_v00853_06_L1486")
+            _plotly_chart(make_nw_kernel_chart(nw_cfg), width="stretch", config=PLOT_CFG, key="plotly_v00853_06_L1486")
         with c_right:
-            st.plotly_chart(make_nw_state_chart(nw_result), width="stretch", config=PLOT_CFG, key="plotly_v00853_07_L1488")
+            _plotly_chart(make_nw_state_chart(nw_result), width="stretch", config=PLOT_CFG, key="plotly_v00853_07_L1488")
 
         st.markdown("#### Strategy Research Comparison — Same Market Data")
         _rows=[]
@@ -1674,10 +1722,10 @@ with tabs[3]:
         )
 
 
-with tabs[4]:
+with tabs[5]:
     if tactical_enabled_used and tactical_result is not None:
         st.markdown("<div class='section-note'><b>Primary strategy comparison:</b> Institutional Tactical portfolio versus Buy & Hold.</div>", unsafe_allow_html=True)
-        st.plotly_chart(make_tactical_portfolio_chart(tactical_result), width="stretch", config=PLOT_CFG, key="plotly_v00853_08_L1528")
+        _plotly_chart(make_tactical_portfolio_chart(tactical_result), width="stretch", config=PLOT_CFG, key="plotly_v00853_08_L1528")
         _tp=pd.to_numeric(tactical_result["TacticalPortfolio"],errors="coerce")
         _bh=pd.to_numeric(tactical_result["BuyHold"],errors="coerce")
         c1,c2,c3,c4=st.columns(4)
@@ -1701,11 +1749,11 @@ with tabs[4]:
         )
     elif nw_enabled_used and nw_result is not None:
         st.info("Tactical Layer disabled; showing Nadaraya-Watson research strategy versus Buy & Hold.")
-        st.plotly_chart(make_nw_equity_chart(nw_result), width="stretch", config=PLOT_CFG, key="plotly_v00853_09_L1538")
+        _plotly_chart(make_nw_equity_chart(nw_result), width="stretch", config=PLOT_CFG, key="plotly_v00853_09_L1538")
     else:
         st.warning("No primary strategy comparison is available.")
 
-with tabs[5]:
+with tabs[6]:
     st.markdown(
         "<div class='section-note'><b>Institutional risk frame:</b> the selected dashboard timeframe, selected rolling calibration window, "
         "and the active Yahoo benchmark are used consistently. No missing asset/benchmark observations are filled.</div>",
@@ -1770,16 +1818,16 @@ with tabs[5]:
         v4.metric("Benchmark",benchmark_ticker_used)
         st.dataframe(_vt,width="stretch",hide_index=True,height=620)
         conf_view=st.radio("VaR Chart Confidence",["95%","99%"],horizontal=True,index=1)
-        st.plotly_chart(make_var_comparison_chart(var_table,0.95 if conf_view=="95%" else 0.99),width="stretch",config=PLOT_CFG, key="plotly_v00853_10_L1607")
+        _plotly_chart(make_var_comparison_chart(var_table,0.95 if conf_view=="95%" else 0.99),width="stretch",config=PLOT_CFG, key="plotly_v00853_10_L1607")
         st.caption(
             "Historical VaR = empirical lower-tail quantile of observed compounded returns. Parametric VaR = Normal model fitted to observed log returns. "
             "Monte Carlo VaR = empirical bootstrap scenarios drawn only from observed returns. Simulation scenarios are risk calculations only; they are never appended to Yahoo history or used as replacement market observations."
         )
 
     st.markdown("### Rolling Risk & Drawdown")
-    st.plotly_chart(make_drawdown_chart(_risk_source),width="stretch",config=PLOT_CFG, key="plotly_v00853_11_L1614")
+    _plotly_chart(make_drawdown_chart(_risk_source),width="stretch",config=PLOT_CFG, key="plotly_v00853_11_L1614")
     st.markdown("#### Underlying Asset Risk")
-    st.plotly_chart(make_underlying_rolling_risk_chart(result,rolling,used_spec,f"{name_used} ({ticker_used})"),width="stretch",config=PLOT_CFG, key="plotly_v00853_12_L1616")
+    _plotly_chart(make_underlying_rolling_risk_chart(result,rolling,used_spec,f"{name_used} ({ticker_used})"),width="stretch",config=PLOT_CFG, key="plotly_v00853_12_L1616")
     a1,a2,a3,a4=st.columns(4)
     a1.metric(f"{used_spec.label} Asset Rolling Return",fmt_pct(risk_state["asset_rolling_return"]))
     a2.metric(f"{used_spec.label} Asset Ann. Volatility",fmt_pct(risk_state["asset_annualized_volatility"]))
@@ -1787,7 +1835,7 @@ with tabs[5]:
     a4.metric("Risk-Series Unique Points",f"{risk_integrity['rolling_return_unique']:,}")
 
     st.markdown("#### Strategy Risk — Primary Portfolio")
-    st.plotly_chart(make_strategy_rolling_risk_chart(_risk_source,rolling,used_spec),width="stretch",config=PLOT_CFG, key="plotly_v00853_13_L1624")
+    _plotly_chart(make_strategy_rolling_risk_chart(_risk_source,rolling,used_spec),width="stretch",config=PLOT_CFG, key="plotly_v00853_13_L1624")
     s1,s2,s3,s4=st.columns(4)
     s1.metric(f"{used_spec.label} Strategy Rolling Return",fmt_pct(risk_state["strategy_rolling_return"]))
     s2.metric(f"{used_spec.label} Strategy Ann. Volatility",fmt_pct(risk_state["strategy_annualized_volatility"]))
@@ -1805,14 +1853,14 @@ with tabs[5]:
             "Impossible Flatness":risk_integrity["impossible_flatness"],
         }]),width="stretch",hide_index=True)
 
-with tabs[6]:
+with tabs[7]:
     st.markdown(
         "<div class='section-note'><b>Trend Diagnostics:</b> Nadaraya-Watson structure, benchmark-relative regime, relative volume, and target exposure. "
         "No historical workbook threshold is used in this client-facing diagnostic.</div>",
         unsafe_allow_html=True,
     )
     if tactical_enabled_used and tactical_result is not None and tactical_cfg is not None:
-        st.plotly_chart(make_institutional_trend_diagnostics(tactical_result,benchmark_ticker_used,tactical_cfg),width="stretch",config=PLOT_CFG, key="plotly_v00853_14_L1649")
+        _plotly_chart(make_institutional_trend_diagnostics(tactical_result,benchmark_ticker_used,tactical_cfg),width="stretch",config=PLOT_CFG, key="plotly_v00853_14_L1649")
         _last=tactical_result.iloc[-1]
         d1,d2,d3,d4,d5,d6=st.columns(6)
         d1.metric("NW Regime","BULLISH" if int(_last["NWDirection"])>0 else "BEARISH" if int(_last["NWDirection"])<0 else "FLAT")
@@ -1824,12 +1872,12 @@ with tabs[6]:
         st.markdown("#### Diagnostic Interpretation")
         st.dataframe(tactical_decision["gates"],width="stretch",hide_index=True,height=310)
     elif nw_enabled_used and nw_result is not None:
-        st.plotly_chart(make_nw_state_chart(nw_result),width="stretch",config=PLOT_CFG, key="plotly_v00853_15_L1661")
+        _plotly_chart(make_nw_state_chart(nw_result),width="stretch",config=PLOT_CFG, key="plotly_v00853_15_L1661")
         st.info("Benchmark-relative tactical diagnostics are unavailable because the Tactical Layer was disabled.")
     else:
         st.info("No institutional trend diagnostic is available for this run.")
 
-with tabs[7]:
+with tabs[8]:
     if tactical_enabled_used and tactical_result is not None:
         _a=tactical_result.copy(); _prev=_a["TacticalTargetExposure"].shift(1)
         _mask=_a["TacticalTargetExposure"].ne(_prev) & _a["TacticalAction"].ne("")
@@ -1844,7 +1892,7 @@ with tabs[7]:
     else:
         st.info("No primary trade/action ledger is available.")
 
-with tabs[8]:
+with tabs[9]:
     if tactical_enabled_used and tactical_result is not None:
         _cols=["Open","High","Low","Close","Volume","Adj Close","AdjCloseCalc","NWTrend","NWUpper","NWLower","NWEnvelopeZ","NWSlope","NWNormalizedSlope","NWSlopeAcceleration","NWDirection","NWBullishReversal","NWBearishReversal","NWMomentumUpwardWarning","NWMomentumDownwardWarning","NWCrossAboveUpper","NWReenterBelowUpper","NWCrossBelowLower","BenchmarkPrice","RollingBeta","ResidualZ","ResidualDriftZ","PriceRatioZ","RelativeVolume","TacticalAction","TacticalTargetExposure","TacticalExposure","TacticalPortfolio","TacticalRationale"]
         _cols=[c for c in _cols if c in tactical_result.columns]
@@ -1856,7 +1904,7 @@ with tabs[8]:
     else:
         st.info("No primary calculation ledger is available.")
 
-with tabs[9]:
+with tabs[10]:
     universe_df = pd.DataFrame(flat_universe_rows())
     uc1, uc2 = st.columns(2)
     with uc1:
@@ -1872,7 +1920,7 @@ with tabs[9]:
     st.dataframe(filt, width="stretch", hide_index=True, height=580)
     st.caption("This is a curated convenience universe, not an exhaustive exchange constituent list. Manual Yahoo ticker input remains available for instruments outside the list.")
 
-with tabs[10]:
+with tabs[11]:
     st.markdown("""
 ### Nadaraya-Watson Trend research layer
 The NW module independently implements the public QuantAlgo methodology: a **one-sided causal endpoint estimator** using only the current and historical bars; Gaussian, Rational Quadratic, Epanechnikov, Triangular, Quartic and Cosine kernels; an effective bandwidth `h = bandwidth × multiplier`; and optional residual bands based on a kernel-weighted mean absolute residual around the current NW estimate.
@@ -1906,7 +1954,7 @@ Relative analytics use exact-timestamp inner alignment only. Missing benchmark b
 
 ### 15-Minute Intraday Governance
 Yahoo Finance supports 15-minute data, but intraday history is restricted to the most recent 60 days.
-The engine hard-stops requests beyond that horizon instead of silently truncating the analysis. v0.08.8 also explicitly withholds a timezone-verifiable in-progress 15-minute bar before any NW, relative, Tactical, risk or intraday calculations run.
+The engine hard-stops requests beyond that horizon instead of silently truncating the analysis. v0.08.8.1 also explicitly withholds a timezone-verifiable in-progress 15-minute bar before any NW, relative, Tactical, risk or intraday calculations run.
 
 The Intraday Tactical Lab is additive: it derives session VWAP, causal opening range, same-slot relative volume, intraday ATR, rolling realized volatility, session gap/drawdown and an explainable confirmation score from the already-fetched Yahoo bars. It does not request a second provider and does not silently alter the primary Tactical target exposure. Auto session models are BIST cash (Istanbul), US cash (New York), Crypto 24/7 (UTC day), and CME/COMEX metals (18:00–17:00 New York).
 
@@ -1921,25 +1969,31 @@ The displayed BUY / HOLD / SELL / WAIT labels are deterministic **strategy state
 """)
 
 
-with tabs[11]:
+with tabs[1]:
+    st.markdown("## 15-Minute Intraday Tactical Lab")
+    st.caption("Dedicated 15-minute execution-quality surface. This tab is the primary location for 15m VWAP, Opening Range, same-slot RVOL, realized volatility, confirmation state and Target Exposure.")
     if interval_used != "15m":
-        st.info("The Intraday Tactical Lab is available when Frequency = 15 Minutes. Daily / Weekly / Monthly models remain unchanged.")
+        st.info("15m is not active in this completed run. Select **Frequency / Bar Size → 15 Minutes** in the sidebar and press **RUN ANALYSIS**. Daily / Weekly / Monthly models remain unchanged.")
     elif not intraday_lab_enabled_used or intraday_result is None or intraday_decision is None:
         st.info("15m mode was used, but the Intraday Tactical Lab was disabled for this run.")
     else:
         st.markdown(
             "<div class='section-note'><b>15m execution-quality layer:</b> session VWAP, causal opening range, same-time-slot relative volume, "
             "rolling intraday ATR/realized volatility, session drawdown, Nadaraya-Watson state and benchmark-relative drift. "
-            "The confirmation score is diagnostic-only in v0.08.8 and does not silently override the Institutional Tactical target exposure.</div>",
+            "The confirmation score is diagnostic-only in v0.08.8.1 and does not silently override the Institutional Tactical target exposure.</div>",
             unsafe_allow_html=True,
         )
         st.caption(
             f"Session: {intraday_decision['session_label']} · Requested window: {intraday_history_window_used or 'Custom'} · "
             f"Latest completed bar used: {intraday_decision['timestamp']}"
         )
-        st.plotly_chart(
+        _plotly_chart(
             build_intraday_tactical_figure(intraday_result, ticker_used, intraday_decision["session_label"]),
             width="stretch", config=PLOT_CFG, key="plotly_v0088_intraday_lab_main"
+        )
+        st.caption(
+            "Bottom panel: **Tactical Target Exposure** is a dedicated 0/25/50/75/100% staircase. "
+            "Markers identify completed-bar target changes; execution remains next-bar-open under the Tactical accounting rules."
         )
 
         i1,i2,i3,i4,i5,i6,i7,i8 = st.columns(8)
