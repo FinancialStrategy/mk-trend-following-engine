@@ -25,6 +25,9 @@ jobs:
       - name: Compile Python files
         run: |
           python -m py_compile app.py
+          python -m py_compile MK_Institutional_Risk_Analytics_v008.py
+          python -m py_compile institutional_surface_validation_v008.py
+          python -m py_compile institutional_var_validation_v008.py
           python -m py_compile MK_Benchmark_Relative_v007.py
           python -m py_compile MK_Institutional_Tactical_v007.py
           python -m py_compile institutional_tactical_validation_v007.py
@@ -95,3 +98,10 @@ jobs:
 
       - name: Institutional tactical validation v0.07
         run: python institutional_tactical_validation_v007.py
+
+
+      - name: Institutional client surface validation v0.08
+        run: python institutional_surface_validation_v008.py
+
+      - name: Institutional VaR validation v0.08
+        run: python institutional_var_validation_v008.py
