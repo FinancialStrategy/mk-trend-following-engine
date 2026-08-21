@@ -1,4 +1,4 @@
-name: Validate Trend Engine v0.08.8.1
+name: Validate Trend Engine v0.08.8.2
 
 on:
   push:
@@ -39,6 +39,7 @@ jobs:
           python -m py_compile MK_Institutional_Tactical_v0086.py
           python -m py_compile MK_Intraday_Tactical_Lab_v0088.py
           python -m py_compile MK_Intraday_Visuals_v0088.py
+          python -m py_compile MK_Tactical_Visual_Governance_v00882.py
           python -m py_compile MK_Yahoo_Original_Fetch_v0085.py
 
       - name: Golden Master regression
@@ -59,10 +60,15 @@ jobs:
       - name: Intraday Tactical Lab v0.08.8
         run: python intraday_tactical_validation_v0088.py
 
-      - name: Intraday visibility and 15m surface v0.08.8.1
+      - name: Intraday visibility and 15m surface v0.08.8.2
         run: |
           python -m py_compile app.py MK_Intraday_Visuals_v0088.py
           python intraday_visibility_validation_v00881.py
+
+      - name: Tactical Envelope non-overlap visual governance v0.08.8.2
+        run: |
+          python -m py_compile app.py MK_Tactical_Visual_Governance_v00882.py
+          python tactical_envelope_layout_validation_v00882.py
 
       - name: Streamlit headless cold-start smoke test
         shell: bash
