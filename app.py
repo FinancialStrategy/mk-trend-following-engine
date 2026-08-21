@@ -13,7 +13,14 @@ from MK_Trend_Following_Engine_v001 import (
     DataIntegrityError,
     MarketDataError,
 )
-from MK_Yahoo_Original_Fetch_v0085 import YahooFinanceAdapter
+try:
+    from MK_Yahoo_Original_Fetch_v0085 import YahooFinanceAdapter
+except ModuleNotFoundError:
+    # Deployment-resilience fallback only.
+    # This is NOT an alternate market-data provider:
+    # it uses the original Yahoo/yfinance adapter already embedded in the legacy engine module.
+    from MK_Trend_Following_Engine_v001 import YahooFinanceAdapter
+
 from MK_Trend_Following_Decision_Engine_v002 import (
     decision_snapshot,
     trade_ledger,
@@ -64,7 +71,7 @@ from MK_Institutional_Tactical_v007 import (
 )
 
 
-APP_VERSION = "v0.08.5"
+APP_VERSION = "v0.08.5.1"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
