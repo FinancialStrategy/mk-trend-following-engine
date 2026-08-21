@@ -1,4 +1,4 @@
-name: Validate Trend Engine v0.08.7
+name: Validate Trend Engine v0.08.8.1
 
 on:
   push:
@@ -37,6 +37,8 @@ jobs:
           python -m py_compile MK_Nadaraya_Watson_HTML_Report_v0087.py
           python -m py_compile MK_Benchmark_Relative_v0087.py
           python -m py_compile MK_Institutional_Tactical_v0086.py
+          python -m py_compile MK_Intraday_Tactical_Lab_v0088.py
+          python -m py_compile MK_Intraday_Visuals_v0088.py
           python -m py_compile MK_Yahoo_Original_Fetch_v0085.py
 
       - name: Golden Master regression
@@ -53,6 +55,14 @@ jobs:
 
       - name: Plotly unique-key regression
         run: python plotly_unique_key_validation_v00853.py
+
+      - name: Intraday Tactical Lab v0.08.8
+        run: python intraday_tactical_validation_v0088.py
+
+      - name: Intraday visibility and 15m surface v0.08.8.1
+        run: |
+          python -m py_compile app.py MK_Intraday_Visuals_v0088.py
+          python intraday_visibility_validation_v00881.py
 
       - name: Streamlit headless cold-start smoke test
         shell: bash
