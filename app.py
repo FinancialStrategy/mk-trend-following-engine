@@ -13,7 +13,7 @@ from MK_Trend_Following_Engine_v001 import (
     DataIntegrityError,
     MarketDataError,
 )
-from MK_Yahoo_Strict_Reconciliation_v0081 import YahooFinanceAdapter
+from MK_Yahoo_Session_Aware_Strict_v0082 import YahooFinanceAdapter
 from MK_Trend_Following_Decision_Engine_v002 import (
     decision_snapshot,
     trade_ledger,
@@ -64,7 +64,7 @@ from MK_Institutional_Tactical_v007 import (
 )
 
 
-APP_VERSION = "v0.08.1"
+APP_VERSION = "v0.08.2"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -1243,7 +1243,7 @@ with tabs[0]:
         st.dataframe(tactical_decision["gates"],use_container_width=True,hide_index=True,height=300)
         st.caption(tactical_decision["timing_note"])
 
-        with st.expander("Yahoo Data Quality & Reconciliation Audit", expanded=False):
+        with st.expander("Yahoo Data Quality & Completed-Session Audit", expanded=False):
             _audit_rows = []
             for _role, _a in [("Asset", asset_yahoo_audit), ("Benchmark", benchmark_yahoo_audit)]:
                 if not _a:
@@ -1252,34 +1252,42 @@ with tabs[0]:
                     "Role": _role,
                     "Ticker": _a.get("ticker", ""),
                     "Interval": _a.get("interval", ""),
-                    "Accepted Yahoo Route": _a.get("accepted_route", ""),
-                    "Primary Status": _a.get("primary_status", ""),
-                    "Secondary Status": _a.get("secondary_status", ""),
+                    "Effective Completed Cutoff": _a.get("effective_completed_cutoff", ""),
+                    "Accepted Mode": _a.get("accepted_mode", ""),
+                    "Yahoo Routes With Data": len(_a.get("routes_with_data", []) or []),
                     "Same-Source Reconciled": bool(_a.get("reconciled", False)),
+                    "Recovered Sessions": ", ".join(_a.get("recovered_sessions", []) or []) or "—",
+                    "Non-Session Placeholders": len(_a.get("non_session_placeholders", []) or []),
+                    "Unfinished Sessions Withheld": len(_a.get("unfinished_session_rows", []) or []),
                     "Observations": _a.get("observations", ""),
                 })
             if _audit_rows:
                 st.dataframe(pd.DataFrame(_audit_rows), use_container_width=True, hide_index=True)
-                _route_b = [r for r in _audit_rows if "Route B" in str(r["Accepted Yahoo Route"])]
-                _reconciled = [r for r in _audit_rows if r["Same-Source Reconciled"]]
-                if _route_b:
-                    if _reconciled:
-                        st.warning(
-                            "A first Yahoo payload was incomplete. A second Yahoo retrieval returned a complete "
-                            "dataset and all commonly observed values passed reconciliation. No alternate provider "
-                            "or fill was used."
-                        )
-                    else:
-                        st.warning(
-                            "The first Yahoo retrieval failed before usable observations were available. "
-                            "A second Yahoo retrieval returned a complete strictly validated dataset. "
-                            "There were no first-route observations to cross-check; no alternate provider or fill was used."
-                        )
-                else:
-                    st.success("Yahoo primary payloads passed strict completeness validation.")
+
+            for _role, _a in [("Asset", asset_yahoo_audit), ("Benchmark", benchmark_yahoo_audit)]:
+                if not _a:
+                    continue
+                if _a.get("non_session_placeholders"):
+                    st.caption(
+                        f"{_role} — exchange-calendar non-session Yahoo placeholders quarantined: "
+                        + ", ".join(_a.get("non_session_placeholders", []))
+                    )
+                if _a.get("unfinished_session_rows"):
+                    st.caption(
+                        f"{_role} — unfinished sessions withheld from completed-bar analysis: "
+                        + ", ".join(_a.get("unfinished_session_rows", []))
+                    )
+                if _a.get("recovered_sessions"):
+                    st.info(
+                        f"{_role} — completed sessions recovered from another Yahoo-only route: "
+                        + ", ".join(_a.get("recovered_sessions", []))
+                    )
+
             st.caption(
-                "Governance: Yahoo Finance only. No forward/back fill, no Close→Adj Close substitution, "
-                "no silent row deletion, and no alternate-provider fallback."
+                "Governance: Yahoo Finance only. BIST daily data is checked against the XIST session calendar. "
+                "Closed-day placeholders are not treated as market observations; unfinished daily sessions are withheld. "
+                "Every completed trading session must be present. No forward/back fill, temporal interpolation, "
+                "Close→Adj Close substitution, or alternate-provider fallback is permitted."
             )
         st.markdown(
             f"<div class='section-note'><b>Benchmark:</b> {benchmark_name(benchmark_ticker_used)} "
