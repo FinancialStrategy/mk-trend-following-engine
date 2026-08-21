@@ -1,0 +1,25 @@
+MK Trend Following Analytics Engine v0.08.1
+YAHOO STRICT RECONCILIATION VALIDATION
+By Murat Konuklar
+============================================================
+Python compile: PASS
+Legacy Golden Master: PASS
+Nadaraya-Watson causal validation: PASS
+Institutional Tactical structural validation: PASS
+Institutional Client Surface regression: PASS
+Institutional VaR method coverage: PASS
+Yahoo exact missing-field diagnostics: PASS
+Yahoo same-source retry design: PASS
+Cross-route observed-value reconciliation: PASS
+Conflicting Yahoo payload hard-stop: PASS
+Synthetic replacement market data: NO
+Fallback provider: NO
+Forward fill / backfill: NO
+Close -> Adj Close substitution: NO
+Silent row deletion: NO
+
+GARAN.IS incident behavior after v0.08.1:
+- Route A incomplete -> Route B Yahoo retry allowed.
+- Route B complete + common Route A values reconcile -> analysis may proceed, visibly audited.
+- Route B incomplete -> STRICT YAHOO DATA STOP.
+- Route A/Route B conflict -> STRICT YAHOO RECONCILIATION STOP.

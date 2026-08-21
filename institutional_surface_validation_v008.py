@@ -3,7 +3,7 @@ import ast,re
 ROOT=Path(__file__).resolve().parent
 src=(ROOT/'app.py').read_text(encoding='utf-8')
 ast.parse(src)
-assert 'APP_VERSION = "v0.08"' in src
+assert 'APP_VERSION = "v0.08.1"' in src
 # Forbidden client headings / text
 for forbidden in [
     'Price & Legacy Signals',

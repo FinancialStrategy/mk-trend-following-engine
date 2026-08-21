@@ -8,12 +8,12 @@ from plotly.subplots import make_subplots
 
 from MK_Trend_Following_Engine_v001 import (
     EngineConfig,
-    YahooFinanceAdapter,
     run_legacy_engine,
     performance_summary,
     DataIntegrityError,
     MarketDataError,
 )
+from MK_Yahoo_Strict_Reconciliation_v0081 import YahooFinanceAdapter
 from MK_Trend_Following_Decision_Engine_v002 import (
     decision_snapshot,
     trade_ledger,
@@ -64,7 +64,7 @@ from MK_Institutional_Tactical_v007 import (
 )
 
 
-APP_VERSION = "v0.08"
+APP_VERSION = "v0.08.1"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -954,7 +954,7 @@ with st.sidebar:
 
 
 # ---------------------------- State ----------------------------
-STATE_SCHEMA_VERSION = 3
+STATE_SCHEMA_VERSION = 4
 _previous_schema = st.session_state.get("_state_schema_version")
 if _previous_schema != STATE_SCHEMA_VERSION:
     # Clear only computed analysis objects from an older deployed code schema.
@@ -967,6 +967,7 @@ if _previous_schema != STATE_SCHEMA_VERSION:
         "relative_snapshot","tactical_config","tactical_result","tactical_snapshot","tactical_sensitivity",
         "nw_enabled", "nw_result", "nw_indicator", "nw_config", "nw_strategy_config",
         "nw_summary", "nw_decision", "nw_trades", "nw_trade_stats", "nw_preset",
+        "asset_yahoo_audit","benchmark_yahoo_audit",
     ]:
         st.session_state.pop(_k, None)
     st.session_state["_state_schema_version"] = STATE_SCHEMA_VERSION
@@ -1014,6 +1015,7 @@ if run_clicked:
                 ticker=ticker, start=str(start), end=str(end), interval=interval,
                 minimum_observations=cfg.minimum_observations,
             )
+            asset_yahoo_audit = dict(raw.attrs.get("yahoo_audit", {}))
             result = run_legacy_engine(raw, cfg)
             summary = performance_summary(result, initial_capital=cfg.initial_capital)
             decision = decision_snapshot(result, cfg)
@@ -1055,6 +1057,7 @@ if run_clicked:
                     ticker=benchmark_ticker, start=str(start), end=str(end), interval=interval,
                     minimum_observations=max(30, int(relative_beta_window) + int(relative_drift_horizon) + 3),
                 )
+                benchmark_yahoo_audit = dict(benchmark_market.attrs.get("yahoo_audit", {}))
                 rel_cfg = RelativeConfig(
                     beta_window=int(relative_beta_window),
                     drift_horizon=int(relative_drift_horizon),
@@ -1075,12 +1078,15 @@ if run_clicked:
                 tactical_decision = tactical_snapshot(tactical_result, tactical_cfg)
             else:
                 benchmark_market = rel_cfg = relative_result = rel_snapshot = None
+                benchmark_yahoo_audit = {}
                 tactical_cfg = tactical_result = tactical_decision = None
 
         st.session_state.result = result
         st.session_state.summary = summary
         st.session_state.config = cfg
         st.session_state.raw = raw
+        st.session_state.asset_yahoo_audit = asset_yahoo_audit
+        st.session_state.benchmark_yahoo_audit = benchmark_yahoo_audit
         st.session_state.decision = decision
         st.session_state.trades = trades
         st.session_state.trade_stats = tstats
@@ -1157,6 +1163,8 @@ tactical_cfg = st.session_state.get("tactical_config")
 tactical_result = st.session_state.get("tactical_result")
 tactical_decision = st.session_state.get("tactical_snapshot")
 tactical_sensitivity_used = st.session_state.get("tactical_sensitivity", "")
+asset_yahoo_audit = st.session_state.get("asset_yahoo_audit", {})
+benchmark_yahoo_audit = st.session_state.get("benchmark_yahoo_audit", {})
 
 entry_gate_label_used = st.session_state.get("entry_gate_label", "")
 entry_lookback_state = st.session_state.get("entry_lookback")
@@ -1234,6 +1242,45 @@ with tabs[0]:
         st.markdown("#### Primary Decision Causality")
         st.dataframe(tactical_decision["gates"],use_container_width=True,hide_index=True,height=300)
         st.caption(tactical_decision["timing_note"])
+
+        with st.expander("Yahoo Data Quality & Reconciliation Audit", expanded=False):
+            _audit_rows = []
+            for _role, _a in [("Asset", asset_yahoo_audit), ("Benchmark", benchmark_yahoo_audit)]:
+                if not _a:
+                    continue
+                _audit_rows.append({
+                    "Role": _role,
+                    "Ticker": _a.get("ticker", ""),
+                    "Interval": _a.get("interval", ""),
+                    "Accepted Yahoo Route": _a.get("accepted_route", ""),
+                    "Primary Status": _a.get("primary_status", ""),
+                    "Secondary Status": _a.get("secondary_status", ""),
+                    "Same-Source Reconciled": bool(_a.get("reconciled", False)),
+                    "Observations": _a.get("observations", ""),
+                })
+            if _audit_rows:
+                st.dataframe(pd.DataFrame(_audit_rows), use_container_width=True, hide_index=True)
+                _route_b = [r for r in _audit_rows if "Route B" in str(r["Accepted Yahoo Route"])]
+                _reconciled = [r for r in _audit_rows if r["Same-Source Reconciled"]]
+                if _route_b:
+                    if _reconciled:
+                        st.warning(
+                            "A first Yahoo payload was incomplete. A second Yahoo retrieval returned a complete "
+                            "dataset and all commonly observed values passed reconciliation. No alternate provider "
+                            "or fill was used."
+                        )
+                    else:
+                        st.warning(
+                            "The first Yahoo retrieval failed before usable observations were available. "
+                            "A second Yahoo retrieval returned a complete strictly validated dataset. "
+                            "There were no first-route observations to cross-check; no alternate provider or fill was used."
+                        )
+                else:
+                    st.success("Yahoo primary payloads passed strict completeness validation.")
+            st.caption(
+                "Governance: Yahoo Finance only. No forward/back fill, no Close→Adj Close substitution, "
+                "no silent row deletion, and no alternate-provider fallback."
+            )
         st.markdown(
             f"<div class='section-note'><b>Benchmark:</b> {benchmark_name(benchmark_ticker_used)} "
             f"(`{benchmark_ticker_used}`) · <b>Sensitivity:</b> {tactical_sensitivity_used}. "
