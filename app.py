@@ -70,7 +70,7 @@ from MK_Benchmark_Relative_v0087 import (
     RelativeConfig, default_benchmark, benchmark_name,
     compute_relative_analytics, relative_snapshot,
 )
-from MK_Institutional_Tactical_v0086 import (
+from MK_Institutional_Tactical_v0089 import (
     TacticalConfig, run_tactical_strategy, tactical_snapshot,
 )
 from MK_Intraday_Tactical_Lab_v0088 import (
@@ -81,7 +81,7 @@ from MK_Intraday_Visuals_v0088 import build_intraday_tactical_figure
 from MK_Tactical_Visual_Governance_v00882 import apply_tactical_envelope_visual_governance
 
 
-APP_VERSION = "v0.08.8.2"
+APP_VERSION = "v0.08.9"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -1122,7 +1122,7 @@ if interval == "15m":
 
 
 # ---------------------------- State ----------------------------
-STATE_SCHEMA_VERSION = 7
+STATE_SCHEMA_VERSION = 8
 _previous_schema = st.session_state.get("_state_schema_version")
 if _previous_schema != STATE_SCHEMA_VERSION:
     # Clear only computed analysis objects from an older deployed code schema.
@@ -1441,7 +1441,7 @@ if tactical_enabled_used and tactical_decision is not None:
     k5.metric("Rolling Beta", fmt_num(tactical_decision["beta"]))
     k6.metric("NW Envelope Z", fmt_num(tactical_decision["envelope_z"]))
     k7.metric("Benchmark", benchmark_ticker_used or "—")
-    k8.metric("Decision Source", "Tactical v0.08.8.2")
+    k8.metric("Decision Source", "Tactical v0.08.9")
 else:
     k1.metric("PRIMARY Decision", "NO DECISION")
     k2.metric("Target Exposure", "—")
@@ -1488,6 +1488,54 @@ with tabs[0]:
         st.markdown("#### Primary Decision Causality")
         st.dataframe(tactical_decision["gates"],width="stretch",hide_index=True,height=300)
         st.caption(tactical_decision["timing_note"])
+
+        with st.expander("Primary Decision Methodology & Formula Rulebook", expanded=False):
+            st.markdown(
+                "**Decision governance:** rules are evaluated strictly in priority order. "
+                "**The first TRUE rule wins.** A later restore rule cannot override an earlier hard-exit or de-risk rule on the same completed bar."
+            )
+            _thr = tactical_decision.get("thresholds", {})
+            _tc1, _tc2, _tc3, _tc4 = st.columns(4)
+            _tc1.metric("Weak Z", f"{_thr.get('weak_z', float('nan')):.2f}")
+            _tc2.metric("Strong Z", f"{_thr.get('strong_z', float('nan')):.2f}")
+            _tc3.metric("Extreme Z", f"{_thr.get('extreme_z', float('nan')):.2f}")
+            _tc4.metric("RVOL Climax", f"{_thr.get('volume_climax', float('nan')):.2f}×")
+            st.caption(f"Active sensitivity preset: {tactical_sensitivity_used}. These are the actual thresholds used by this completed run.")
+
+            st.markdown("##### Core formulas used by the Primary Decision Engine")
+            st.dataframe(tactical_decision.get("formulae", pd.DataFrame()), width="stretch", hide_index=True, height=385)
+
+            st.markdown("##### Action semantics")
+            st.dataframe(tactical_decision.get("decision_semantics", pd.DataFrame()), width="stretch", hide_index=True)
+
+            st.markdown("##### Priority-ordered decision rulebook")
+            st.dataframe(tactical_decision.get("rulebook", pd.DataFrame()), width="stretch", hide_index=True, height=575)
+
+            _matched = tactical_decision.get("matched_rule") or {}
+            if _matched:
+                st.markdown(
+                    f"**Selected rule:** Priority `{_matched.get('Priority')}` · `{_matched.get('Rule ID')}` · "
+                    f"**{_matched.get('Selected Effect', tactical_decision.get('decision',''))}**"
+                )
+
+            _decision_text = str(tactical_decision.get("decision", ""))
+            if _decision_text.startswith("HOLD") or _decision_text == "WAIT / CASH":
+                st.info("WHY HOLD / WAIT — " + str(tactical_decision.get("hold_explanation", tactical_decision.get("rationale",""))))
+            else:
+                st.success("WHY THIS ACTION — " + str(tactical_decision.get("rationale", "")) + " The selected rule is the highest-priority TRUE condition on the latest completed bar.")
+
+            st.markdown("##### Latest completed-bar rule evaluation")
+            _eval = tactical_decision.get("rule_evaluation", pd.DataFrame()).copy()
+            if not _eval.empty:
+                _eval_cols = ["Priority","Rule ID","Category","Condition / Formula","Condition Status","Target Policy","Selected Effect","Selected"]
+                _eval_cols = [c for c in _eval_cols if c in _eval.columns]
+                st.dataframe(_eval[_eval_cols], width="stretch", hide_index=True, height=575)
+
+            st.caption(
+                "HOLD is an explicit decision, not an absence of logic. It can mean: "
+                "(1) no higher-priority rule is true; (2) a reduce rule is true but exposure is already at/below its tier; "
+                "(3) a restore rule is true but exposure is already at/above its tier; or (4) model warm-up is incomplete."
+            )
 
         with st.expander("Yahoo Data Quality & Fetch Audit", expanded=False):
             _audit_rows = []
