@@ -1,4 +1,4 @@
-name: Validate Trend Engine v0.08.8.2
+name: Validate Trend Engine v0.08.9
 
 on:
   push:
@@ -37,6 +37,7 @@ jobs:
           python -m py_compile MK_Nadaraya_Watson_HTML_Report_v0087.py
           python -m py_compile MK_Benchmark_Relative_v0087.py
           python -m py_compile MK_Institutional_Tactical_v0086.py
+          python -m py_compile MK_Institutional_Tactical_v0089.py
           python -m py_compile MK_Intraday_Tactical_Lab_v0088.py
           python -m py_compile MK_Intraday_Visuals_v0088.py
           python -m py_compile MK_Tactical_Visual_Governance_v00882.py
@@ -49,7 +50,7 @@ jobs:
         run: python yahoo_rate_limit_validation_v00852.py
 
       - name: Tactical accounting integrity
-        run: python tactical_accounting_validation_v0086.py
+        run: python tactical_accounting_validation_v0089.py
 
       - name: Tactical chart and surface integrity
         run: python tactical_surface_validation_v0086.py
@@ -69,6 +70,11 @@ jobs:
         run: |
           python -m py_compile app.py MK_Tactical_Visual_Governance_v00882.py
           python tactical_envelope_layout_validation_v00882.py
+
+      - name: Primary Decision rulebook & HOLD explainability v0.08.9
+        run: |
+          python -m py_compile MK_Institutional_Tactical_v0089.py app.py
+          python primary_decision_rulebook_validation_v0089.py
 
       - name: Streamlit headless cold-start smoke test
         shell: bash
