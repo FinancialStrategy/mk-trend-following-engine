@@ -13,7 +13,7 @@ from MK_Trend_Following_Engine_v001 import (
     DataIntegrityError,
     MarketDataError,
 )
-from MK_Yahoo_Session_Aware_Strict_v0082 import YahooFinanceAdapter
+from MK_Yahoo_Session_Aware_Strict_v0083 import YahooFinanceAdapter
 from MK_Trend_Following_Decision_Engine_v002 import (
     decision_snapshot,
     trade_ledger,
@@ -64,7 +64,7 @@ from MK_Institutional_Tactical_v007 import (
 )
 
 
-APP_VERSION = "v0.08.2"
+APP_VERSION = "v0.08.3"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -1257,6 +1257,8 @@ with tabs[0]:
                     "Yahoo Routes With Data": len(_a.get("routes_with_data", []) or []),
                     "Same-Source Reconciled": bool(_a.get("reconciled", False)),
                     "Recovered Sessions": ", ".join(_a.get("recovered_sessions", []) or []) or "—",
+                    "Precision-Normalized Matches": int(_a.get("precision_normalized_matches", 0) or 0),
+                    "Max Precision Spread (bps)": float(_a.get("max_precision_spread_bps", 0.0) or 0.0),
                     "Non-Session Placeholders": len(_a.get("non_session_placeholders", []) or []),
                     "Unfinished Sessions Withheld": len(_a.get("unfinished_session_rows", []) or []),
                     "Observations": _a.get("observations", ""),
@@ -1281,6 +1283,17 @@ with tabs[0]:
                     st.info(
                         f"{_role} — completed sessions recovered from another Yahoo-only route: "
                         + ", ".join(_a.get("recovered_sessions", []))
+                    )
+
+            for _role, _a in [("Asset", asset_yahoo_audit), ("Benchmark", benchmark_yahoo_audit)]:
+                if not _a:
+                    continue
+                if int(_a.get("precision_normalized_matches", 0) or 0) > 0:
+                    st.caption(
+                        f"{_role} — {_a.get('precision_normalized_matches', 0)} cross-route values differed only "
+                        f"within the machine-precision envelope; maximum spread "
+                        f"{float(_a.get('max_precision_spread_bps', 0.0) or 0.0):.6f} bps. "
+                        "The highest-priority observed Yahoo value was retained; no averaging was performed."
                     )
 
             st.caption(

@@ -1,0 +1,28 @@
+MK Trend Following Analytics Engine v0.08.3
+PRECISION-AWARE YAHOO CONSENSUS
+By Murat Konuklar
+============================================================
+Python compile: PASS
+Exact AKBNK reported precision fixtures: PASS
+Machine-precision reconciliation: PASS
+Material price-conflict hard-stop: PASS
+Volume strict reconciliation: PASS
+Session-aware Yahoo governance regression: PASS
+Legacy Golden Master regression: PASS
+Consensus averaging / median synthesis: NO
+Synthetic market observations: NO
+Alternate provider: NO
+Forward/back fill: NO
+
+AKBNK reported fixtures:
+1) max abs spread 1.43051147461e-06; 0.003145 bps; PASS
+2) max abs spread 9.53674316406e-07; 0.002093 bps; PASS
+3) max abs spread 1.43051147461e-06; 0.003145 bps; PASS
+4) max abs spread 4.76837158203e-07; 0.001050 bps; PASS
+5) max abs spread 4.76837158203e-07; 0.001043 bps; PASS
+6) max abs spread 9.53674316406e-07; 0.002029 bps; PASS
+7) max abs spread 4.76837158203e-07; 0.001025 bps; PASS
+
+Material Adj Close conflict hard-stop: PASS
+Volume integer-strict reconciliation: PASS
+Accepted consensus value: highest-priority actual Yahoo observation
