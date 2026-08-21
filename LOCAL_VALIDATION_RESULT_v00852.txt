@@ -1,0 +1,30 @@
+MK Trend Following Analytics Engine v0.08.5.2
+YAHOO RATE-LIMIT STABILITY HOTFIX
+By Murat Konuklar
+============================================================
+Python compile: PASS
+Original yf.download acquisition contract: RETAINED
+Same-call bounded backoff retry: PASS
+Successful-request Streamlit cache: PRESENT
+Asset/benchmark repeated-request suppression: PRESENT
+Streamlit use_container_width deprecation: REMOVED
+Obsolete Yahoo consensus tests in active workflow: REMOVED
+Golden Master regression: PASS
+Alternate market-data provider: NO
+Synthetic market data: NO
+Forward/back fill: NO
+
+PASS — Yahoo rate-limit stable fetch v0.08.5.2
+Same yf.download path retry: PASS
+Empty payload -> bounded backoff -> real Yahoo observation: PASS
+Successful data alteration: NO
+Streamlit request cache: PRESENT
+use_container_width deprecation: REMOVED
+Alternate market-data provider: NO
+Synthetic/fill data: NO
+
+PASS — Golden Master replication
+Observations: 1,043
+Final Strategy: 1,449,095.223507
+Final Buy & Hold: 747,161.572052
+No live market data was requested by this test.
