@@ -72,7 +72,7 @@ from MK_Institutional_Tactical_v007 import (
 )
 
 
-APP_VERSION = "v0.08.5.2"
+APP_VERSION = "v0.08.5.3"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -1371,7 +1371,7 @@ with tabs[1]:
         st.plotly_chart(
             make_tactical_envelope_chart(tactical_result, benchmark_ticker_used),
             width="stretch",config=PLOT_CFG
-        )
+        , key="plotly_v00853_01_L1371")
         t1,t2,t3,t4,t5,t6 = st.columns(6)
         t1.metric("Decision",tactical_decision["decision"])
         t2.metric("Target Exposure",fmt_pct(tactical_decision["target_exposure"]))
@@ -1384,7 +1384,7 @@ with tabs[1]:
         st.dataframe(tactical_decision["gates"],width="stretch",hide_index=True,height=300)
 
         st.markdown("#### Staged Exposure & Capital Path")
-        st.plotly_chart(make_tactical_portfolio_chart(tactical_result),width="stretch",config=PLOT_CFG)
+        st.plotly_chart(make_tactical_portfolio_chart(tactical_result),width="stretch",config=PLOT_CFG, key="plotly_v00853_02_L1387")
 
         with st.expander("Tactical Action Ledger",expanded=False):
             cols=["AdjCloseCalc","NWTrend","NWUpper","NWLower","NWEnvelopeZ","ResidualDriftZ",
@@ -1398,7 +1398,7 @@ with tabs[2]:
         "and Institutional Tactical events only.</div>",
         unsafe_allow_html=True,
     )
-    st.plotly_chart(make_primary_price_chart(result, f"{name_used} ({ticker_used})"), width="stretch", config=PLOT_CFG)
+    st.plotly_chart(make_primary_price_chart(result, f"{name_used} ({ticker_used})"), width="stretch", config=PLOT_CFG, key="plotly_v00853_03_L1401")
 
 with tabs[3]:
     if not nw_enabled_used or nw_result is None:
@@ -1441,7 +1441,7 @@ with tabs[3]:
         n7.metric("NW Closed Trades", f"{nw_tstats['closed_trades']:,}")
 
         st.markdown("#### Nadaraya-Watson Price Structure")
-        st.plotly_chart(make_nw_overlay_chart(nw_result, nw_cfg), width="stretch", config=PLOT_CFG)
+        st.plotly_chart(make_nw_overlay_chart(nw_result, nw_cfg), width="stretch", config=PLOT_CFG, key="plotly_v00853_04_L1444")
 
         left,right = st.columns([1.2,1])
         with left:
@@ -1473,7 +1473,7 @@ with tabs[3]:
             )
 
         st.markdown("#### NW Strategy Performance")
-        st.plotly_chart(make_nw_equity_chart(nw_result), width="stretch", config=PLOT_CFG)
+        st.plotly_chart(make_nw_equity_chart(nw_result), width="stretch", config=PLOT_CFG, key="plotly_v00853_05_L1476")
         c1,c2,c3,c4,c5 = st.columns(5)
         c1.metric("NW Final Value", f"{nw_summary['portfolio_final']:,.0f}")
         c2.metric("Buy & Hold Final", f"{nw_summary['buyhold_final']:,.0f}")
@@ -1483,9 +1483,9 @@ with tabs[3]:
 
         c_left,c_right = st.columns(2)
         with c_left:
-            st.plotly_chart(make_nw_kernel_chart(nw_cfg), width="stretch", config=PLOT_CFG)
+            st.plotly_chart(make_nw_kernel_chart(nw_cfg), width="stretch", config=PLOT_CFG, key="plotly_v00853_06_L1486")
         with c_right:
-            st.plotly_chart(make_nw_state_chart(nw_result), width="stretch", config=PLOT_CFG)
+            st.plotly_chart(make_nw_state_chart(nw_result), width="stretch", config=PLOT_CFG, key="plotly_v00853_07_L1488")
 
         st.markdown("#### Strategy Research Comparison — Same Market Data")
         _rows=[]
@@ -1525,7 +1525,7 @@ with tabs[3]:
 with tabs[4]:
     if tactical_enabled_used and tactical_result is not None:
         st.markdown("<div class='section-note'><b>Primary strategy comparison:</b> Institutional Tactical portfolio versus Buy & Hold.</div>", unsafe_allow_html=True)
-        st.plotly_chart(make_tactical_portfolio_chart(tactical_result), width="stretch", config=PLOT_CFG)
+        st.plotly_chart(make_tactical_portfolio_chart(tactical_result), width="stretch", config=PLOT_CFG, key="plotly_v00853_08_L1528")
         _tp=pd.to_numeric(tactical_result["TacticalPortfolio"],errors="coerce")
         _bh=pd.to_numeric(tactical_result["BuyHold"],errors="coerce")
         c1,c2,c3,c4=st.columns(4)
@@ -1535,7 +1535,7 @@ with tabs[4]:
         c4.metric("Buy & Hold Max DD",fmt_pct((_bh/_bh.cummax()-1).min()))
     elif nw_enabled_used and nw_result is not None:
         st.info("Tactical Layer disabled; showing Nadaraya-Watson research strategy versus Buy & Hold.")
-        st.plotly_chart(make_nw_equity_chart(nw_result), width="stretch", config=PLOT_CFG)
+        st.plotly_chart(make_nw_equity_chart(nw_result), width="stretch", config=PLOT_CFG, key="plotly_v00853_09_L1538")
     else:
         st.warning("No primary strategy comparison is available.")
 
@@ -1604,16 +1604,16 @@ with tabs[5]:
         v4.metric("Benchmark",benchmark_ticker_used)
         st.dataframe(_vt,width="stretch",hide_index=True,height=620)
         conf_view=st.radio("VaR Chart Confidence",["95%","99%"],horizontal=True,index=1)
-        st.plotly_chart(make_var_comparison_chart(var_table,0.95 if conf_view=="95%" else 0.99),width="stretch",config=PLOT_CFG)
+        st.plotly_chart(make_var_comparison_chart(var_table,0.95 if conf_view=="95%" else 0.99),width="stretch",config=PLOT_CFG, key="plotly_v00853_10_L1607")
         st.caption(
             "Historical VaR = empirical lower-tail quantile of observed compounded returns. Parametric VaR = Normal model fitted to observed log returns. "
             "Monte Carlo VaR = empirical bootstrap scenarios drawn only from observed returns. Simulation scenarios are risk calculations only; they are never appended to Yahoo history or used as replacement market observations."
         )
 
     st.markdown("### Rolling Risk & Drawdown")
-    st.plotly_chart(make_drawdown_chart(_risk_source),width="stretch",config=PLOT_CFG)
+    st.plotly_chart(make_drawdown_chart(_risk_source),width="stretch",config=PLOT_CFG, key="plotly_v00853_11_L1614")
     st.markdown("#### Underlying Asset Risk")
-    st.plotly_chart(make_underlying_rolling_risk_chart(result,rolling,used_spec,f"{name_used} ({ticker_used})"),width="stretch",config=PLOT_CFG)
+    st.plotly_chart(make_underlying_rolling_risk_chart(result,rolling,used_spec,f"{name_used} ({ticker_used})"),width="stretch",config=PLOT_CFG, key="plotly_v00853_12_L1616")
     a1,a2,a3,a4=st.columns(4)
     a1.metric(f"{used_spec.label} Asset Rolling Return",fmt_pct(risk_state["asset_rolling_return"]))
     a2.metric(f"{used_spec.label} Asset Ann. Volatility",fmt_pct(risk_state["asset_annualized_volatility"]))
@@ -1621,7 +1621,7 @@ with tabs[5]:
     a4.metric("Risk-Series Unique Points",f"{risk_integrity['rolling_return_unique']:,}")
 
     st.markdown("#### Strategy Risk — Primary Portfolio")
-    st.plotly_chart(make_strategy_rolling_risk_chart(_risk_source,rolling,used_spec),width="stretch",config=PLOT_CFG)
+    st.plotly_chart(make_strategy_rolling_risk_chart(_risk_source,rolling,used_spec),width="stretch",config=PLOT_CFG, key="plotly_v00853_13_L1624")
     s1,s2,s3,s4=st.columns(4)
     s1.metric(f"{used_spec.label} Strategy Rolling Return",fmt_pct(risk_state["strategy_rolling_return"]))
     s2.metric(f"{used_spec.label} Strategy Ann. Volatility",fmt_pct(risk_state["strategy_annualized_volatility"]))
@@ -1646,7 +1646,7 @@ with tabs[6]:
         unsafe_allow_html=True,
     )
     if tactical_enabled_used and tactical_result is not None and tactical_cfg is not None:
-        st.plotly_chart(make_institutional_trend_diagnostics(tactical_result,benchmark_ticker_used,tactical_cfg),width="stretch",config=PLOT_CFG)
+        st.plotly_chart(make_institutional_trend_diagnostics(tactical_result,benchmark_ticker_used,tactical_cfg),width="stretch",config=PLOT_CFG, key="plotly_v00853_14_L1649")
         _last=tactical_result.iloc[-1]
         d1,d2,d3,d4,d5,d6=st.columns(6)
         d1.metric("NW Regime","BULLISH" if int(_last["NWDirection"])>0 else "BEARISH" if int(_last["NWDirection"])<0 else "FLAT")
@@ -1658,7 +1658,7 @@ with tabs[6]:
         st.markdown("#### Diagnostic Interpretation")
         st.dataframe(tactical_decision["gates"],width="stretch",hide_index=True,height=310)
     elif nw_enabled_used and nw_result is not None:
-        st.plotly_chart(make_nw_state_chart(nw_result),width="stretch",config=PLOT_CFG)
+        st.plotly_chart(make_nw_state_chart(nw_result),width="stretch",config=PLOT_CFG, key="plotly_v00853_15_L1661")
         st.info("Benchmark-relative tactical diagnostics are unavailable because the Tactical Layer was disabled.")
     else:
         st.info("No institutional trend diagnostic is available for this run.")

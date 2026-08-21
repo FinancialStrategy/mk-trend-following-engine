@@ -1,0 +1,32 @@
+MK Trend Following Analytics Engine v0.08.5.3
+STREAMLIT PLOTLY UNIQUE-KEY HOTFIX
+By Murat Konuklar
+============================================================
+Python compile: PASS
+Every Plotly chart explicitly keyed: PASS
+All Plotly keys globally unique: PASS
+Yahoo rate-limit stability regression: PASS
+Golden Master regression: PASS
+Streamlit width migration: PASS
+Alternate provider: NO
+Synthetic market data: NO
+
+PASS — Plotly unique-key validation v0.08.5.3
+Plotly chart calls: 15
+Unique explicit keys: 15
+DuplicateElementId protection: PASS
+
+PASS — Yahoo rate-limit stable fetch regression under v0.08.5.3
+Same yf.download path retry: PASS
+Empty payload -> bounded backoff -> real Yahoo observation: PASS
+Successful data alteration: NO
+Streamlit request cache: PRESENT
+use_container_width deprecation: REMOVED
+Alternate market-data provider: NO
+Synthetic/fill data: NO
+
+PASS — Golden Master replication
+Observations: 1,043
+Final Strategy: 1,449,095.223507
+Final Buy & Hold: 747,161.572052
+No live market data was requested by this test.
