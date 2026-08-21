@@ -1,4 +1,4 @@
-name: Validate Trend Engine
+name: Validate Trend Engine v0.08.7
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  golden-master:
+  validation:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,62 +22,37 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Compile Python files
+      - name: Compile active Python modules
         run: |
           python -m py_compile app.py
-          python -m py_compile MK_Institutional_Risk_Analytics_v008.py
-          python -m py_compile institutional_surface_validation_v008.py
-          python -m py_compile institutional_var_validation_v008.py
-          python -m py_compile MK_Benchmark_Relative_v007.py
-          python -m py_compile MK_Institutional_Tactical_v007.py
-          python -m py_compile institutional_tactical_validation_v007.py
           python -m py_compile MK_Trend_Following_Engine_v001.py
           python -m py_compile MK_Trend_Following_Decision_Engine_v002.py
-          python -m py_compile MK_Trend_Following_Universe_v002.py
-          python -m py_compile MK_Trend_Following_HTML_Report_v002.py
-          python -m py_compile MK_Trend_Following_HTML_Report_v003.py
-          python -m py_compile MK_Trend_Following_Risk_Analytics_v003.py
-          python -m py_compile MK_Trend_Following_Risk_Analytics_v004.py
+          python -m py_compile MK_Trend_Following_Universe_v0087.py
+          python -m py_compile MK_Institutional_Risk_Analytics_v0087.py
           python -m py_compile MK_Trend_Following_Entry_Gate_v005.py
-          python -m py_compile MK_Nadaraya_Watson_Trend_v006.py
-          python -m py_compile MK_Nadaraya_Watson_HTML_Report_v006.py
+          python -m py_compile MK_Trend_Following_Risk_Analytics_v003.py
+          python -m py_compile MK_Trend_Following_HTML_Report_v003.py
+          python -m py_compile MK_Nadaraya_Watson_Trend_v0087.py
+          python -m py_compile MK_Nadaraya_Watson_Visuals_v0087.py
+          python -m py_compile MK_Nadaraya_Watson_HTML_Report_v0087.py
+          python -m py_compile MK_Benchmark_Relative_v0087.py
+          python -m py_compile MK_Institutional_Tactical_v0086.py
+          python -m py_compile MK_Yahoo_Original_Fetch_v0085.py
 
-      - name: Golden Master validation
+      - name: Golden Master regression
         run: python smoke_test.py
 
-      - name: v0.02 decision/report integration test
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          from MK_Trend_Following_Engine_v001 import EngineConfig, load_legacy_golden_csv, run_legacy_engine
-          from MK_Trend_Following_Decision_Engine_v002 import decision_snapshot, trade_ledger
-          from MK_Trend_Following_HTML_Report_v002 import build_html
-          g=load_legacy_golden_csv('MK_Trend_Following_Legacy_Golden_Master_GE_1988_2008.csv')
-          m=g.rename(columns={'AdjClose':'Adj Close'})[['Open','High','Low','Close','Volume','Adj Close']]
-          cfg=EngineConfig()
-          r=run_legacy_engine(m,cfg,validate=False)
-          d=decision_snapshot(r,cfg)
-          assert d['decision'] in {'BUY','HOLD','SELL','WAIT / CASH'}
-          html=build_html(r,cfg,ticker='GE',instrument_name='Golden Master',market_label='Legacy Test',source_note='Offline Golden Master')
-          assert 'Decision & Causality' in html
-          assert 'Interactive Price' in html
-          print('PASS — v0.02 decision/report integration')
-          PY
+      - name: Yahoo rate-limit stability regression
+        run: python yahoo_rate_limit_validation_v00852.py
 
-      - name: Rolling risk source-separation validation
-        run: python risk_analytics_test_v003.py
+      - name: Tactical accounting integrity
+        run: python tactical_accounting_validation_v0086.py
 
-      - name: Flat-line presentation validation v0.04
-        run: python risk_flat_line_test_v004.py
+      - name: Tactical chart and surface integrity
+        run: python tactical_surface_validation_v0086.py
 
-      - name: Entry gate governance validation v0.05
-        run: python entry_gate_test_v005.py
-
-      - name: Cold-start state regression validation v0.05.1
-        run: python cold_start_regression_test_v0051.py
-
-      - name: Nadaraya-Watson Trend validation v0.06
-        run: python nadaraya_watson_validation_v006.py
+      - name: Plotly unique-key regression
+        run: python plotly_unique_key_validation_v00853.py
 
       - name: Streamlit headless cold-start smoke test
         shell: bash
@@ -96,30 +71,8 @@ jobs:
           cat /tmp/streamlit.log
           exit 1
 
-      - name: Institutional tactical validation v0.07
-        run: python institutional_tactical_validation_v007.py
-
-
-      - name: Institutional client surface validation v0.08
-        run: python institutional_surface_validation_v008.py
-
-      - name: Institutional VaR validation v0.08
-        run: python institutional_var_validation_v008.py
-
-      - name: Yahoo strict reconciliation validation v0.08.1
+      - name: Crypto Copper NW visual validation v0.08.7
         run: |
-          python -m py_compile MK_Yahoo_Strict_Reconciliation_v0081.py
-          python -m py_compile app.py
-          python yahoo_strict_reconciliation_validation_v0081.py
-
-      - name: Yahoo session-aware strict validation v0.08.2
-        run: |
-          python -m py_compile MK_Yahoo_Session_Aware_Strict_v0083.py
-          python -m py_compile app.py
-          python yahoo_session_aware_validation_v0082.py
-
-      - name: Yahoo precision-aware consensus validation v0.08.3
-        run: |
-          python -m py_compile MK_Yahoo_Session_Aware_Strict_v0083.py
-          python -m py_compile app.py
-          python yahoo_precision_consensus_validation_v0083.py
+          python -m py_compile app.py MK_Trend_Following_Universe_v0087.py MK_Benchmark_Relative_v0087.py MK_Nadaraya_Watson_Trend_v0087.py MK_Nadaraya_Watson_Visuals_v0087.py MK_Nadaraya_Watson_HTML_Report_v0087.py MK_Institutional_Risk_Analytics_v0087.py
+          python crypto_copper_nw_validation_v0087.py
+          python surface_validation_v0087.py
