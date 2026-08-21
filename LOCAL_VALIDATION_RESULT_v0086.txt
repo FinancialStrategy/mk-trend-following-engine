@@ -1,0 +1,29 @@
+MK Trend Following Analytics Engine v0.08.6
+TACTICAL ACCOUNTING INTEGRITY & STRATEGY-vs-BUY/HOLD REBUILD
+By Murat Konuklar
+====================================================================
+Python compile: PASS
+Golden Master regression: PASS
+Tactical accounting identity: PASS
+Initial Tactical overlay exposure: 100%
+Hidden HOLD rebalancing: REMOVED
+Trade only on target change: PASS
+Independent Buy & Hold construction: PASS
+Target vs Actual Exposure separation: PASS
+Tactical/B&H Wealth Ratio panel: PRESENT
+Next Target vs Current Executed Target semantics: EXPLICIT
+Cash carry assumption: EXPLICIT USER INPUT
+Target Exposure staircase: PRESENT
+Plotly explicit unique keys: PASS
+Yahoo acquisition logic changed by this version: NO
+Synthetic market observations: NO
+Alternate data provider: NO
+Forward/back fill: NO
+
+Golden Master:
+Observations: 1,043
+Final Strategy: 1,449,095.223507
+Final Buy & Hold: 747,161.572052
+
+Tactical accounting validation used real GE Golden Master prices.
+No live Yahoo market-data request was required for deterministic validation.

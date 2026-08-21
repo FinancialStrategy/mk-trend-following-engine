@@ -67,12 +67,12 @@ from MK_Benchmark_Relative_v007 import (
     RelativeConfig, default_benchmark, benchmark_name,
     compute_relative_analytics, relative_snapshot,
 )
-from MK_Institutional_Tactical_v007 import (
+from MK_Institutional_Tactical_v0086 import (
     TacticalConfig, run_tactical_strategy, tactical_snapshot,
 )
 
 
-APP_VERSION = "v0.08.5.3"
+APP_VERSION = "v0.08.6"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -675,30 +675,63 @@ def make_tactical_envelope_chart(df, benchmark_ticker):
 
 
 def make_tactical_portfolio_chart(df):
-    fig=make_subplots(rows=2,cols=1,shared_xaxes=True,row_heights=[0.76,0.24],vertical_spacing=0.06)
+    """Institutional tactical wealth, staged exposure and relative-wealth diagnostics."""
+    fig = make_subplots(
+        rows=3, cols=1, shared_xaxes=True,
+        row_heights=[0.60, 0.24, 0.16], vertical_spacing=0.055,
+    )
     fig.add_trace(go.Scatter(
-        x=df.index,y=df["TacticalPortfolio"],mode="lines",name="Institutional Tactical Portfolio",
-        line=dict(width=1.8,color="#0F172A")
-    ),row=1,col=1)
+        x=df.index, y=df["TacticalPortfolio"], mode="lines", name="Institutional Tactical Portfolio",
+        line=dict(width=2.2, color="#0F172A")
+    ), row=1, col=1)
     fig.add_trace(go.Scatter(
-        x=df.index,y=df["BuyHold"],mode="lines",name="Buy & Hold",
-        line=dict(width=1.2,color="#64748B",dash="dot")
-    ),row=1,col=1)
+        x=df.index, y=df["BuyHold"], mode="lines", name="Buy & Hold",
+        line=dict(width=1.35, color="#64748B", dash="dot")
+    ), row=1, col=1)
+
+    # Target exposure is a decision state, therefore render it as a staircase.
     fig.add_trace(go.Scatter(
-        x=df.index,y=df["TacticalTargetExposure"],mode="lines",name="Target Exposure",
-        line=dict(width=1.3,color="#334155"),fill="tozeroy",fillcolor="rgba(51,65,85,.10)"
-    ),row=2,col=1)
+        x=df.index, y=df["TacticalTargetExposure"], mode="lines", name="Target Exposure",
+        line=dict(width=2.4, color="#0F172A", shape="hv"),
+        fill="tozeroy", fillcolor="rgba(15,23,42,.10)"
+    ), row=2, col=1)
+    if "TacticalActualExposure" in df.columns:
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df["TacticalActualExposure"], mode="lines", name="Actual Close Exposure",
+            line=dict(width=1.0, color="#64748B", dash="dot")
+        ), row=2, col=1)
+    if "TacticalRebalanceFlag" in df.columns:
+        m = df["TacticalRebalanceFlag"].fillna(False).astype(bool)
+        fig.add_trace(go.Scatter(
+            x=df.index[m], y=df.loc[m, "TacticalTargetExposure"], mode="markers",
+            name="Exposure Change", marker=dict(size=7, symbol="diamond", color="#334155")
+        ), row=2, col=1)
+
+    ratio = df["TacticalVsBuyHoldRatio"] if "TacticalVsBuyHoldRatio" in df.columns else df["TacticalPortfolio"] / df["BuyHold"]
+    fig.add_trace(go.Scatter(
+        x=df.index, y=ratio, mode="lines", name="Tactical / Buy & Hold Wealth Ratio",
+        line=dict(width=1.4, color="#475569")
+    ), row=3, col=1)
+    fig.add_hline(y=1.0, line_width=0.8, line_dash="dot", line_color="#94A3B8", row=3, col=1)
+
+    for y in [0.0, 0.25, 0.50, 0.75, 1.0]:
+        fig.add_hline(y=y, line_width=0.55, line_dash="dot", line_color="#E2E8F0", row=2, col=1)
+
     fig.update_layout(
-        title=dict(text="Institutional Tactical Portfolio & Staged Exposure",
-                   x=.01,xanchor="left",y=.955,yanchor="top",font=dict(size=15),pad=dict(t=4,b=4)),
-        template="plotly_white",height=620,hovermode="x unified",
-        margin=dict(l=50,r=30,t=118,b=35),
-        legend=dict(orientation="h",y=1.03,x=1,xanchor="right"),
+        title=dict(text="Institutional Tactical Portfolio, Staged Exposure & Relative Wealth",
+                   x=.01, xanchor="left", y=.965, yanchor="top", font=dict(size=15), pad=dict(t=4,b=4)),
+        template="plotly_white", height=760, hovermode="x unified",
+        margin=dict(l=55,r=35,t=118,b=35),
+        legend=dict(orientation="h",y=1.025,x=1,xanchor="right"),
         font=dict(family="Arial Narrow, Helvetica Neue, Arial, sans-serif",size=11,color="#334155"),
     )
-    fig.update_yaxes(title_text="Portfolio Value",row=1,col=1,gridcolor="#E2E8F0")
-    fig.update_yaxes(title_text="Target Exposure",tickformat=".0%",range=[0,1.02],row=2,col=1)
-    fig.update_xaxes(rangeselector=RANGE_SELECTOR,rangeslider=dict(visible=False),row=1,col=1)
+    fig.update_yaxes(title_text="Portfolio Value", row=1, col=1, gridcolor="#E2E8F0")
+    fig.update_yaxes(
+        title_text="Exposure", tickformat=".0%", range=[-0.04,1.05],
+        tickvals=[0,.25,.50,.75,1.0], row=2, col=1, gridcolor="#E2E8F0"
+    )
+    fig.update_yaxes(title_text="Wealth Ratio", tickformat=".2f", row=3, col=1, gridcolor="#E2E8F0")
+    fig.update_xaxes(rangeselector=RANGE_SELECTOR, rangeslider=dict(visible=False), row=1, col=1)
     return fig
 
 
@@ -973,6 +1006,16 @@ with st.sidebar:
     }
     _sens = sensitivity_map[sensitivity]
 
+    tactical_cash_rate_pct = st.number_input(
+        "Uninvested Cash Annual Yield (%)",
+        min_value=0.0, max_value=200.0, value=0.0, step=0.25,
+        disabled=not tactical_enabled,
+        help=(
+            "Optional user-supplied annual carry for the uninvested cash sleeve. "
+            "No cash-rate market series is fetched or invented. Use 0% for a conservative no-carry backtest."
+        ),
+    )
+
     if interval == "15m":
         default_beta, default_drift = 40, 8
     elif interval == "1d":
@@ -1002,7 +1045,7 @@ with st.sidebar:
 
 
 # ---------------------------- State ----------------------------
-STATE_SCHEMA_VERSION = 4
+STATE_SCHEMA_VERSION = 5
 _previous_schema = st.session_state.get("_state_schema_version")
 if _previous_schema != STATE_SCHEMA_VERSION:
     # Clear only computed analysis objects from an older deployed code schema.
@@ -1123,6 +1166,9 @@ if run_clicked:
                     extreme_z=float(_sens["extreme"]),
                     volume_climax=float(_sens["vol"]),
                     initial_capital=float(initial_capital),
+                    initial_target_exposure=1.0,
+                    rebalance_only_on_target_change=True,
+                    cash_annual_rate=float(tactical_cash_rate_pct) / 100.0,
                 )
                 tactical_result = run_tactical_strategy(nw_result, relative_result, tactical_cfg)
                 tactical_decision = tactical_snapshot(tactical_result, tactical_cfg)
@@ -1240,13 +1286,13 @@ st.caption(f"{market_used} / {group_used}  |  {interval_label_used}  |  {summary
 k1,k2,k3,k4,k5,k6,k7,k8 = st.columns(8)
 if tactical_enabled_used and tactical_decision is not None:
     k1.metric("PRIMARY Decision", tactical_decision["decision"])
-    k2.metric("Target Exposure", fmt_pct(tactical_decision["target_exposure"]))
+    k2.metric("Next Target", fmt_pct(tactical_decision["target_exposure"]))
     k3.metric("Last Adj. Close", fmt_num(result["AdjCloseCalc"].iloc[-1]))
     k4.metric("Relative Drift Z", fmt_num(tactical_decision["relative_z"]))
     k5.metric("Rolling Beta", fmt_num(tactical_decision["beta"]))
     k6.metric("NW Envelope Z", fmt_num(tactical_decision["envelope_z"]))
     k7.metric("Benchmark", benchmark_ticker_used or "—")
-    k8.metric("Decision Source", "Tactical v0.07.1")
+    k8.metric("Decision Source", "Tactical v0.08.6")
 else:
     k1.metric("PRIMARY Decision", "NO DECISION")
     k2.metric("Target Exposure", "—")
@@ -1284,7 +1330,7 @@ with tabs[0]:
             unsafe_allow_html=True,
         )
         p1,p2,p3,p4,p5 = st.columns(5)
-        p1.metric("Target Exposure", fmt_pct(tactical_decision["target_exposure"]))
+        p1.metric("Next Target Exposure", fmt_pct(tactical_decision["target_exposure"]))
         p2.metric("Relative Drift Z", fmt_num(tactical_decision["relative_z"]))
         p3.metric("NW Envelope Z", fmt_num(tactical_decision["envelope_z"]))
         p4.metric("Rolling Beta", fmt_num(tactical_decision["beta"]))
@@ -1293,7 +1339,7 @@ with tabs[0]:
         st.dataframe(tactical_decision["gates"],width="stretch",hide_index=True,height=300)
         st.caption(tactical_decision["timing_note"])
 
-        with st.expander("Yahoo Data Quality & Completed-Session Audit", expanded=False):
+        with st.expander("Yahoo Data Quality & Fetch Audit", expanded=False):
             _audit_rows = []
             for _role, _a in [("Asset", asset_yahoo_audit), ("Benchmark", benchmark_yahoo_audit)]:
                 if not _a:
@@ -1302,52 +1348,19 @@ with tabs[0]:
                     "Role": _role,
                     "Ticker": _a.get("ticker", ""),
                     "Interval": _a.get("interval", ""),
-                    "Effective Completed Cutoff": _a.get("effective_completed_cutoff", ""),
+                    "Effective Cutoff": _a.get("effective_completed_cutoff", ""),
                     "Accepted Mode": _a.get("accepted_mode", ""),
-                    "Yahoo Routes With Data": len(_a.get("routes_with_data", []) or []),
-                    "Same-Source Reconciled": bool(_a.get("reconciled", False)),
-                    "Recovered Sessions": ", ".join(_a.get("recovered_sessions", []) or []) or "—",
-                    "Precision-Normalized Matches": int(_a.get("precision_normalized_matches", 0) or 0),
-                    "Max Precision Spread (bps)": float(_a.get("max_precision_spread_bps", 0.0) or 0.0),
-                    "Non-Session Placeholders": len(_a.get("non_session_placeholders", []) or []),
-                    "Unfinished Sessions Withheld": len(_a.get("unfinished_session_rows", []) or []),
+                    "Retry Status": _a.get("retry_status", "NOT USED"),
+                    "Attempts": _a.get("attempts_used", 1),
                     "Observations": _a.get("observations", ""),
                 })
             if _audit_rows:
                 st.dataframe(pd.DataFrame(_audit_rows), width="stretch", hide_index=True)
 
-            for _role, _a in [("Asset", asset_yahoo_audit), ("Benchmark", benchmark_yahoo_audit)]:
-                if not _a:
-                    continue
-                if _a.get("non_session_placeholders"):
-                    st.caption(
-                        f"{_role} — exchange-calendar non-session Yahoo placeholders quarantined: "
-                        + ", ".join(_a.get("non_session_placeholders", []))
-                    )
-                if _a.get("unfinished_session_rows"):
-                    st.caption(
-                        f"{_role} — unfinished sessions withheld from completed-bar analysis: "
-                        + ", ".join(_a.get("unfinished_session_rows", []))
-                    )
-                if _a.get("recovered_sessions"):
-                    st.info(
-                        f"{_role} — recent completed sessions recovered by targeted Yahoo-only retry: "
-                        + ", ".join(_a.get("recovered_sessions", []))
-                    )
-                if _a.get("historical_missing_sessions"):
-                    _hist = _a.get("historical_missing_sessions", [])
-                    st.warning(
-                        f"{_role} — {len(_hist)} older historical XIST session gap(s) detected in Yahoo. "
-                        "They are disclosed for backtest/risk-quality review but do not block the current live decision. "
-                        "No values were filled. Examples: " + ", ".join(_hist[:8])
-                    )
-
             st.caption(
-                "Governance: Yahoo Finance only. The stable primary fetch again uses yfinance.download with keepna=False, "
-                "matching the original working acquisition behavior. Returned rows remain strictly validated. "
-                "For BIST daily data, recent completed-session coverage is enforced; older historical gaps are disclosed "
-                "as audit warnings rather than blocking the live decision. No fill, interpolation, Close→Adj Close "
-                "substitution, averaging, or alternate-provider fallback is permitted."
+                "Governance: Yahoo Finance only. Live acquisition uses the original stable yfinance.download path with keepna=False. "
+                "Successful identical requests are cached to reduce Yahoo request pressure; temporary transport failures can only retry the same Yahoo download route. "
+                "No multi-route consensus, historical session-gap enforcement, fill, interpolation, averaging, or alternate-provider fallback is applied."
             )
         st.markdown(
             f"<div class='section-note'><b>Benchmark:</b> {benchmark_name(benchmark_ticker_used)} "
@@ -1374,7 +1387,7 @@ with tabs[1]:
         , key="plotly_v00853_01_L1371")
         t1,t2,t3,t4,t5,t6 = st.columns(6)
         t1.metric("Decision",tactical_decision["decision"])
-        t2.metric("Target Exposure",fmt_pct(tactical_decision["target_exposure"]))
+        t2.metric("Next Target Exposure",fmt_pct(tactical_decision["target_exposure"]))
         t3.metric("Relative Drift Z",fmt_num(tactical_decision["relative_z"]))
         t4.metric("Rolling Beta",fmt_num(tactical_decision["beta"]))
         t5.metric("NW Envelope Z",fmt_num(tactical_decision["envelope_z"]))
@@ -1386,10 +1399,26 @@ with tabs[1]:
         st.markdown("#### Staged Exposure & Capital Path")
         st.plotly_chart(make_tactical_portfolio_chart(tactical_result),width="stretch",config=PLOT_CFG, key="plotly_v00853_02_L1387")
 
+        _tx = pd.to_numeric(tactical_result["TacticalTargetExposure"], errors="coerce")
+        _ax = pd.to_numeric(tactical_result.get("TacticalActualExposure", tactical_result["TacticalExposure"]), errors="coerce")
+        _rb = tactical_result.get("TacticalRebalanceFlag", pd.Series(False, index=tactical_result.index)).fillna(False).astype(bool)
+        e1,e2,e3,e4,e5 = st.columns(5)
+        e1.metric("Average Target", fmt_pct(_tx.mean()))
+        e2.metric("Full Exposure Time", fmt_pct((_tx >= 0.999).mean()))
+        e3.metric("Cash Time", fmt_pct((_tx <= 0.001).mean()))
+        e4.metric("Exposure Changes", f"{int(_rb.sum()):,}")
+        e5.metric("Current Actual Exposure", fmt_pct(_ax.iloc[-1]))
+        st.caption(
+            "Accounting governance: the Tactical overlay initializes at 100% exposure, changes exposure only when a completed-bar target changes, "
+            "and executes that change at the next adjusted open. HOLD does not trigger hidden daily constant-mix rebalancing. "
+            f"Uninvested cash carry assumption: {float(tactical_cfg.cash_annual_rate):.2%} annualized (user supplied; no cash-rate series is fabricated)."
+        )
+
         with st.expander("Tactical Action Ledger",expanded=False):
             cols=["AdjCloseCalc","NWTrend","NWUpper","NWLower","NWEnvelopeZ","ResidualDriftZ",
                   "RollingBeta","RelativeVolume","TacticalAction","TacticalTargetExposure",
-                  "TacticalExposure","TacticalPortfolio","TacticalRationale"]
+                  "TacticalActualExposure","TacticalTargetChange","TacticalRebalanceFlag",
+                  "TacticalTradedValue","TacticalTurnover","TacticalPortfolio","TacticalVsBuyHoldRatio","TacticalRationale"]
             st.dataframe(tactical_result[cols].sort_index(ascending=False),width="stretch",height=560)
 
 with tabs[2]:
@@ -1492,7 +1521,7 @@ with tabs[3]:
         if tactical_enabled_used and tactical_result is not None:
             _tp=pd.to_numeric(tactical_result["TacticalPortfolio"],errors="coerce")
             _years=max((tactical_result.index[-1]-tactical_result.index[0]).days/365.25,1e-9)
-            _rows.append({"System":"MK Institutional Tactical","CAGR":(_tp.iloc[-1]/float(initial_capital))**(1/_years)-1,"Max Drawdown":(_tp/_tp.cummax()-1).min(),"Final Value":float(_tp.iloc[-1]),"Closed Trades":int((tactical_result["TacticalTradedValue"]>0).sum())})
+            _rows.append({"System":"MK Institutional Tactical","CAGR":(_tp.iloc[-1]/float(initial_capital))**(1/_years)-1,"Max Drawdown":(_tp/_tp.cummax()-1).min(),"Final Value":float(_tp.iloc[-1]),"Closed Trades":int(tactical_result.get("TacticalRebalanceFlag", tactical_result["TacticalTradedValue"]>0).sum())})
         _rows.extend([
             {"System":strategy_mode_label(nw_scfg.mode),"CAGR":nw_summary["strategy_cagr"],"Max Drawdown":nw_summary["max_drawdown"],"Final Value":nw_summary["portfolio_final"],"Closed Trades":nw_tstats["closed_trades"]},
             {"System":"Buy & Hold","CAGR":nw_summary["buyhold_cagr"],"Max Drawdown":nw_summary["buyhold_max_drawdown"],"Final Value":nw_summary["buyhold_final"],"Closed Trades":0},
@@ -1533,6 +1562,20 @@ with tabs[4]:
         c2.metric("Buy & Hold Return",fmt_pct(_bh.iloc[-1]/float(initial_capital)-1))
         c3.metric("Tactical Max DD",fmt_pct((_tp/_tp.cummax()-1).min()))
         c4.metric("Buy & Hold Max DD",fmt_pct((_bh/_bh.cummax()-1).min()))
+        _tx = pd.to_numeric(tactical_result["TacticalTargetExposure"], errors="coerce")
+        _ratio = pd.to_numeric(tactical_result.get("TacticalVsBuyHoldRatio", _tp/_bh), errors="coerce")
+        _reb = tactical_result.get("TacticalRebalanceFlag", pd.Series(False, index=tactical_result.index)).fillna(False).astype(bool)
+        d1,d2,d3,d4 = st.columns(4)
+        d1.metric("Average Target Exposure", fmt_pct(_tx.mean()))
+        d2.metric("Time at 100%", fmt_pct((_tx >= 0.999).mean()))
+        d3.metric("Exposure Changes", f"{int(_reb.sum()):,}")
+        d4.metric("Terminal Tactical / B&H", f"{float(_ratio.iloc[-1]):.3f}x")
+        st.caption(
+            "Interpretation: raising Target Exposure from 25% to 100% does not make Tactical NAV jump toward the Buy & Hold NAV. "
+            "It changes participation in subsequent asset returns. Any wealth gap accumulated while de-risked remains in the NAV unless later active returns recover it. "
+            "The lower panel therefore shows both the staged target and the Tactical/Buy & Hold wealth ratio explicitly. "
+            f"Uninvested cash carry in this run: {float(tactical_cfg.cash_annual_rate):.2%} annualized."
+        )
     elif nw_enabled_used and nw_result is not None:
         st.info("Tactical Layer disabled; showing Nadaraya-Watson research strategy versus Buy & Hold.")
         st.plotly_chart(make_nw_equity_chart(nw_result), width="stretch", config=PLOT_CFG, key="plotly_v00853_09_L1538")
