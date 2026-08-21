@@ -105,3 +105,9 @@ jobs:
 
       - name: Institutional VaR validation v0.08
         run: python institutional_var_validation_v008.py
+
+      - name: Yahoo strict reconciliation validation v0.08.1
+        run: |
+          python -m py_compile MK_Yahoo_Strict_Reconciliation_v0081.py
+          python -m py_compile app.py
+          python yahoo_strict_reconciliation_validation_v0081.py
