@@ -73,9 +73,14 @@ from MK_Benchmark_Relative_v0087 import (
 from MK_Institutional_Tactical_v0086 import (
     TacticalConfig, run_tactical_strategy, tactical_snapshot,
 )
+from MK_Intraday_Tactical_Lab_v0088 import (
+    IntradayConfig, SESSION_OVERRIDE_OPTIONS, infer_session_spec,
+    withhold_incomplete_intraday_bar, compute_intraday_features, intraday_snapshot,
+)
+from MK_Intraday_Visuals_v0088 import build_intraday_tactical_figure
 
 
-APP_VERSION = "v0.08.7"
+APP_VERSION = "v0.08.8"
 PLOT_CFG = {
     "displaylogo": False,
     "responsive": True,
@@ -828,8 +833,20 @@ with st.sidebar:
 
     interval_label = st.selectbox("Frequency", ["15 Minutes", "Daily", "Weekly", "Monthly"], index=1)
     interval = {"15 Minutes":"15m", "Daily":"1d", "Weekly":"1wk", "Monthly":"1mo"}[interval_label]
+    intraday_history_window = "Custom Dates"
     if interval == "15m":
-        st.caption("Yahoo 15-minute mode: strict maximum historical span is 60 days. The engine will not silently truncate an older request.")
+        intraday_history_window = st.selectbox(
+            "15m History Window",
+            ["5 Days", "10 Days", "20 Days", "30 Days", "45 Days", "59 Days", "Custom Dates"],
+            index=3,
+            help="Yahoo intraday history is limited to the most recent 60 days. Preset windows explicitly override Start Date; Custom Dates preserves your exact dates.",
+        )
+        _window_days = {"5 Days":5, "10 Days":10, "20 Days":20, "30 Days":30, "45 Days":45, "59 Days":59}
+        if intraday_history_window in _window_days:
+            start = (pd.Timestamp(end) - pd.Timedelta(days=int(_window_days[intraday_history_window]))).date()
+            st.caption(f"Effective 15m request: **{start} → {end}**. No silent truncation is applied.")
+        else:
+            st.caption("Yahoo 15-minute mode: custom dates must remain inside the most recent 60-day intraday window. The engine will hard-stop an older request.")
 
     initial_capital = st.number_input(
         "Initial Capital", min_value=1.0, value=100000.0, step=10000.0,
@@ -859,15 +876,29 @@ with st.sidebar:
         help="Independent causal Python implementation of the public QuantAlgo Nadaraya-Watson Trend methodology.",
     )
 
+    _crypto_like_15m = str(ticker).upper().endswith("-USD")
+    if interval == "15m":
+        _nw_options = [
+            "MK 15m Institutional Balanced", "MK 15m Fast", "MK 15m Smooth",
+            "Public-Methodology Gaussian", "MK Institutional Balanced", "MK Fast Research", "MK Smooth Position", "Custom"
+        ]
+    else:
+        _nw_options = ["MK Institutional Balanced", "Public-Methodology Gaussian", "MK Fast Research", "MK Smooth Position", "Custom"]
     nw_preset = st.selectbox(
         "NW Research Preset",
-        ["MK Institutional Balanced", "Public-Methodology Gaussian", "MK Fast Research", "MK Smooth Position", "Custom"],
+        _nw_options,
         index=0,
         disabled=not nw_enabled,
-        help="Numeric presets are MK Engine research presets; they are not claimed to be QuantAlgo's proprietary/default parameter values.",
+        help="15m presets are explicit bar-based MK research calibrations, not claimed QuantAlgo defaults. Daily/weekly presets remain unchanged.",
     )
 
+    _intraday_balanced_lookback = 96 if _crypto_like_15m else 64
+    _intraday_fast_lookback = 48 if _crypto_like_15m else 32
+    _intraday_smooth_lookback = 192 if _crypto_like_15m else 128
     preset_map = {
+        "MK 15m Institutional Balanced": dict(lookback=_intraday_balanced_lookback, bandwidth=8.0, kernel="Rational Quadratic", relative_weight=1.0, band_multiplier=2.0, confirmation=2, exit_confirmation=2),
+        "MK 15m Fast": dict(lookback=_intraday_fast_lookback, bandwidth=5.0, kernel="Gaussian", relative_weight=1.0, band_multiplier=1.8, confirmation=1, exit_confirmation=1),
+        "MK 15m Smooth": dict(lookback=_intraday_smooth_lookback, bandwidth=12.0, kernel="Rational Quadratic", relative_weight=1.25, band_multiplier=2.2, confirmation=3, exit_confirmation=2),
         "MK Institutional Balanced": dict(lookback=100, bandwidth=12.0, kernel="Rational Quadratic", relative_weight=1.0, band_multiplier=2.0, confirmation=2, exit_confirmation=2),
         "Public-Methodology Gaussian": dict(lookback=100, bandwidth=8.0, kernel="Gaussian", relative_weight=1.0, band_multiplier=2.0, confirmation=1, exit_confirmation=1),
         "MK Fast Research": dict(lookback=50, bandwidth=8.0, kernel="Gaussian", relative_weight=1.0, band_multiplier=1.8, confirmation=1, exit_confirmation=1),
@@ -952,6 +983,37 @@ with st.sidebar:
         )
 
 
+    intraday_lab_enabled = False
+    intraday_session_override = "Auto"
+    intraday_opening_range_bars = 4
+    intraday_slot_rvol_sessions = 10
+    intraday_atr_window = 14
+    intraday_realized_vol_window = 32
+    if interval == "15m":
+        st.divider()
+        st.subheader("15m Intraday Tactical Lab")
+        intraday_lab_enabled = st.toggle(
+            "Enable Intraday Tactical Lab", value=True,
+            help="Session VWAP, opening range, same-slot relative volume, intraday ATR/realized volatility and an explainable confirmation score. No extra market-data source is queried.",
+        )
+        intraday_session_override = st.selectbox(
+            "Intraday Session Model", SESSION_OVERRIDE_OPTIONS, index=0, disabled=not intraday_lab_enabled,
+            help="Auto maps crypto to UTC 24/7, BIST to Istanbul cash hours, =F metals futures to CME/COMEX session hours, and other tickers to US cash hours.",
+        )
+        _detected_spec = infer_session_spec(ticker, intraday_session_override)
+        st.caption(f"Session model: **{_detected_spec.label}**")
+        ic1, ic2 = st.columns(2)
+        with ic1:
+            intraday_opening_range_bars = st.number_input("Opening Range Bars", min_value=2, max_value=12, value=4, step=1, disabled=not intraday_lab_enabled)
+            intraday_atr_window = st.number_input("Intraday ATR Window", min_value=5, max_value=100, value=14, step=1, disabled=not intraday_lab_enabled)
+        with ic2:
+            intraday_slot_rvol_sessions = st.number_input("Same-Slot RVOL Sessions", min_value=3, max_value=30, value=10, step=1, disabled=not intraday_lab_enabled)
+            intraday_realized_vol_window = st.number_input("Realized Vol Window (bars)", min_value=8, max_value=200, value=32, step=1, disabled=not intraday_lab_enabled)
+        st.caption(
+            "Intraday Confirmation is diagnostic-only in v0.08.8: it does not silently override Institutional Tactical exposure. "
+            "The primary portfolio still follows completed-bar → next-open execution."
+        )
+
     st.divider()
     st.subheader("Institutional Tactical Layer")
     tactical_enabled = st.toggle(
@@ -1000,7 +1062,10 @@ with st.sidebar:
     )
 
     if interval == "15m":
-        default_beta, default_drift = 40, 8
+        if str(ticker).upper().endswith("-USD") or str(ticker).upper().endswith("=F"):
+            default_beta, default_drift = 96, 12
+        else:
+            default_beta, default_drift = 64, 8
     elif interval == "1d":
         default_beta, default_drift = 60, 10
     elif interval == "1wk":
@@ -1028,7 +1093,7 @@ with st.sidebar:
 
 
 # ---------------------------- State ----------------------------
-STATE_SCHEMA_VERSION = 6
+STATE_SCHEMA_VERSION = 7
 _previous_schema = st.session_state.get("_state_schema_version")
 if _previous_schema != STATE_SCHEMA_VERSION:
     # Clear only computed analysis objects from an older deployed code schema.
@@ -1042,6 +1107,7 @@ if _previous_schema != STATE_SCHEMA_VERSION:
         "nw_enabled", "nw_result", "nw_indicator", "nw_config", "nw_strategy_config",
         "nw_summary", "nw_decision", "nw_trades", "nw_trade_stats", "nw_preset",
         "asset_yahoo_audit","benchmark_yahoo_audit",
+        "intraday_lab_enabled","intraday_config","intraday_result","intraday_snapshot","intraday_audit","intraday_history_window",
     ]:
         st.session_state.pop(_k, None)
     st.session_state["_state_schema_version"] = STATE_SCHEMA_VERSION
@@ -1062,12 +1128,16 @@ if run_clicked:
     if start >= end:
         st.error("End Date must be later than Start Date.")
         st.stop()
-    if interval == "15m" and (pd.Timestamp(end) - pd.Timestamp(start)).days > 59:
-        st.error(
-            "STRICT INTRADAY DATA STOP — Yahoo Finance 15-minute history cannot extend beyond the last 60 days. "
-            "Reduce the requested date span; the engine will not silently truncate or substitute data."
-        )
-        st.stop()
+    if interval == "15m":
+        _today_utc = pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
+        _start_ts = pd.Timestamp(start).normalize()
+        _end_ts = pd.Timestamp(end).normalize()
+        if (_end_ts - _start_ts).days > 59 or _start_ts < (_today_utc - pd.Timedelta(days=59)):
+            st.error(
+                "STRICT INTRADAY DATA STOP — Yahoo Finance 15-minute requests must remain inside the most recent 60-day window. "
+                "Choose a 15m preset window or valid custom dates; the engine will not silently truncate, splice, or substitute data."
+            )
+            st.stop()
     if tactical_enabled and not benchmark_ticker:
         st.error("BENCHMARK GOVERNANCE STOP — Primary Tactical Layer requires an explicit Yahoo benchmark ticker.")
         st.stop()
@@ -1091,6 +1161,12 @@ if run_clicked:
                 cache_bucket=_yahoo_cache_bucket(interval),
             )
             asset_yahoo_audit = dict(raw.attrs.get("yahoo_audit", {}))
+            raw, _asset_intraday_completion = withhold_incomplete_intraday_bar(raw, interval)
+            asset_yahoo_audit.update(_asset_intraday_completion)
+            if len(raw) < cfg.minimum_observations:
+                raise DataIntegrityError(
+                    f"Only {len(raw)} completed observations remain after intraday completion governance; minimum is {cfg.minimum_observations}."
+                )
             result = run_legacy_engine(raw, cfg)
             summary = performance_summary(result, initial_capital=cfg.initial_capital, periods_per_year=infer_periodicity(result.index)[0])
             decision = decision_snapshot(result, cfg)
@@ -1147,6 +1223,12 @@ if run_clicked:
                     cache_bucket=_yahoo_cache_bucket(interval),
                 )
                 benchmark_yahoo_audit = dict(benchmark_market.attrs.get("yahoo_audit", {}))
+                benchmark_market, _benchmark_intraday_completion = withhold_incomplete_intraday_bar(benchmark_market, interval)
+                benchmark_yahoo_audit.update(_benchmark_intraday_completion)
+                if len(benchmark_market) < max(30, int(relative_beta_window) + int(relative_drift_horizon) + 3):
+                    raise DataIntegrityError(
+                        "Benchmark has insufficient completed observations after intraday completion governance."
+                    )
                 rel_cfg = RelativeConfig(
                     beta_window=int(relative_beta_window),
                     drift_horizon=int(relative_drift_horizon),
@@ -1172,6 +1254,20 @@ if run_clicked:
                 benchmark_market = rel_cfg = relative_result = rel_snapshot = None
                 benchmark_yahoo_audit = {}
                 tactical_cfg = tactical_result = tactical_decision = None
+
+            if interval == "15m" and intraday_lab_enabled:
+                intraday_cfg = IntradayConfig(
+                    opening_range_bars=int(intraday_opening_range_bars),
+                    slot_rvol_sessions=int(intraday_slot_rvol_sessions),
+                    atr_window=int(intraday_atr_window),
+                    realized_vol_window=int(intraday_realized_vol_window),
+                    session_override=intraday_session_override,
+                )
+                _intraday_source = tactical_result if tactical_result is not None else nw_result if nw_result is not None else result
+                intraday_result, intraday_audit = compute_intraday_features(_intraday_source, ticker, intraday_cfg)
+                intraday_decision = intraday_snapshot(intraday_result, intraday_cfg, intraday_audit)
+            else:
+                intraday_cfg = intraday_result = intraday_audit = intraday_decision = None
 
         st.session_state.result = result
         st.session_state.summary = summary
@@ -1212,6 +1308,12 @@ if run_clicked:
         st.session_state.tactical_result = tactical_result
         st.session_state.tactical_snapshot = tactical_decision
         st.session_state.tactical_sensitivity = sensitivity
+        st.session_state.intraday_lab_enabled = bool(interval == "15m" and intraday_lab_enabled)
+        st.session_state.intraday_config = intraday_cfg
+        st.session_state.intraday_result = intraday_result
+        st.session_state.intraday_snapshot = intraday_decision
+        st.session_state.intraday_audit = intraday_audit
+        st.session_state.intraday_history_window = intraday_history_window
     except (DataIntegrityError, MarketDataError) as exc:
         st.error(f"STRICT DATA STOP — {exc}")
         st.stop()
@@ -1259,6 +1361,12 @@ tactical_decision = st.session_state.get("tactical_snapshot")
 tactical_sensitivity_used = st.session_state.get("tactical_sensitivity", "")
 asset_yahoo_audit = st.session_state.get("asset_yahoo_audit", {})
 benchmark_yahoo_audit = st.session_state.get("benchmark_yahoo_audit", {})
+intraday_lab_enabled_used = bool(st.session_state.get("intraday_lab_enabled", False))
+intraday_cfg = st.session_state.get("intraday_config")
+intraday_result = st.session_state.get("intraday_result")
+intraday_decision = st.session_state.get("intraday_snapshot")
+intraday_audit = st.session_state.get("intraday_audit") or {}
+intraday_history_window_used = st.session_state.get("intraday_history_window", "")
 
 entry_gate_label_used = st.session_state.get("entry_gate_label", "")
 entry_lookback_state = st.session_state.get("entry_lookback")
@@ -1290,7 +1398,7 @@ if tactical_enabled_used and tactical_decision is not None:
     k5.metric("Rolling Beta", fmt_num(tactical_decision["beta"]))
     k6.metric("NW Envelope Z", fmt_num(tactical_decision["envelope_z"]))
     k7.metric("Benchmark", benchmark_ticker_used or "—")
-    k8.metric("Decision Source", "Tactical v0.08.6")
+    k8.metric("Decision Source", "Tactical v0.08.8")
 else:
     k1.metric("PRIMARY Decision", "NO DECISION")
     k2.metric("Target Exposure", "—")
@@ -1315,6 +1423,7 @@ tabs = st.tabs([
     "Calculation Ledger",
     "Instrument Universe",
     "Methodology & Governance",
+    "15m Intraday Tactical Lab",
 ])
 
 with tabs[0]:
@@ -1350,6 +1459,8 @@ with tabs[0]:
                     "Accepted Mode": _a.get("accepted_mode", ""),
                     "Retry Status": _a.get("retry_status", "NOT USED"),
                     "Attempts": _a.get("attempts_used", 1),
+                    "Incomplete 15m Bar Withheld": _a.get("incomplete_intraday_bar_withheld", "NO"),
+                    "15m Completion Check": _a.get("intraday_completion_check", "NOT APPLICABLE"),
                     "Observations": _a.get("observations", ""),
                 })
             if _audit_rows:
@@ -1795,7 +1906,9 @@ Relative analytics use exact-timestamp inner alignment only. Missing benchmark b
 
 ### 15-Minute Intraday Governance
 Yahoo Finance supports 15-minute data, but intraday history is restricted to the most recent 60 days.
-The engine hard-stops requests beyond that horizon instead of silently truncating the analysis.
+The engine hard-stops requests beyond that horizon instead of silently truncating the analysis. v0.08.8 also explicitly withholds a timezone-verifiable in-progress 15-minute bar before any NW, relative, Tactical, risk or intraday calculations run.
+
+The Intraday Tactical Lab is additive: it derives session VWAP, causal opening range, same-slot relative volume, intraday ATR, rolling realized volatility, session gap/drawdown and an explainable confirmation score from the already-fetched Yahoo bars. It does not request a second provider and does not silently alter the primary Tactical target exposure. Auto session models are BIST cash (Istanbul), US cash (New York), Crypto 24/7 (UTC day), and CME/COMEX metals (18:00–17:00 New York).
 
 ### Strict market-data governance
 Yahoo Finance is the only live market-data source in this build. The application does not fabricate observations, fill missing market prices, or switch to another vendor. A failed or incomplete Yahoo response terminates that requested run.
@@ -1806,5 +1919,75 @@ Yahoo is requested with `auto_adjust=False`. Raw OHLC and `Adj Close` stay disti
 ### Research boundary
 The displayed BUY / HOLD / SELL / WAIT labels are deterministic **strategy states**, not discretionary investment recommendations.
 """)
+
+
+with tabs[11]:
+    if interval_used != "15m":
+        st.info("The Intraday Tactical Lab is available when Frequency = 15 Minutes. Daily / Weekly / Monthly models remain unchanged.")
+    elif not intraday_lab_enabled_used or intraday_result is None or intraday_decision is None:
+        st.info("15m mode was used, but the Intraday Tactical Lab was disabled for this run.")
+    else:
+        st.markdown(
+            "<div class='section-note'><b>15m execution-quality layer:</b> session VWAP, causal opening range, same-time-slot relative volume, "
+            "rolling intraday ATR/realized volatility, session drawdown, Nadaraya-Watson state and benchmark-relative drift. "
+            "The confirmation score is diagnostic-only in v0.08.8 and does not silently override the Institutional Tactical target exposure.</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            f"Session: {intraday_decision['session_label']} · Requested window: {intraday_history_window_used or 'Custom'} · "
+            f"Latest completed bar used: {intraday_decision['timestamp']}"
+        )
+        st.plotly_chart(
+            build_intraday_tactical_figure(intraday_result, ticker_used, intraday_decision["session_label"]),
+            width="stretch", config=PLOT_CFG, key="plotly_v0088_intraday_lab_main"
+        )
+
+        i1,i2,i3,i4,i5,i6,i7,i8 = st.columns(8)
+        i1.metric("Confirmation", intraday_decision["confirmation_state"])
+        i2.metric("Score", fmt_num(intraday_decision["confirmation_score"], 1))
+        i3.metric("Session VWAP", fmt_num(intraday_decision["vwap"]))
+        i4.metric("VWAP Gap", fmt_pct(intraday_decision["vwap_gap_pct"]))
+        i5.metric("OR High", fmt_num(intraday_decision["opening_range_high"]))
+        i6.metric("OR Low", fmt_num(intraday_decision["opening_range_low"]))
+        i7.metric("Same-Slot RVOL", fmt_num(intraday_decision["slot_rvol"]))
+        i8.metric("Realized Vol", fmt_pct(intraday_decision["realized_vol"]))
+
+        j1,j2,j3,j4,j5 = st.columns(5)
+        j1.metric("Session Return", fmt_pct(intraday_decision["session_return_pct"]))
+        j2.metric("Session Drawdown", fmt_pct(intraday_decision["session_drawdown_pct"]))
+        j3.metric("Session Gap", fmt_pct(intraday_decision["session_gap_pct"]))
+        j4.metric("15m ATR", fmt_num(intraday_decision["intraday_atr"]))
+        if tactical_result is not None:
+            j5.metric("Tactical Target", fmt_pct(tactical_result["TacticalTargetExposure"].iloc[-1]))
+        else:
+            j5.metric("Tactical Target", "—")
+
+        st.markdown("#### Intraday Confirmation Gate Matrix")
+        st.dataframe(intraday_decision["gates"], width="stretch", hide_index=True, height=330)
+        st.caption(intraday_decision["timing_note"])
+
+        with st.expander("Intraday Session & Calculation Audit", expanded=False):
+            st.dataframe(pd.DataFrame([intraday_audit]), width="stretch", hide_index=True)
+            st.markdown(
+                "**Causality:** session VWAP uses cumulative observed price×volume only; opening-range levels evolve during the opening range and freeze only after the selected number of completed bars; "
+                "same-slot RVOL compares the current bar only with prior sessions at the same slot; no current/future session volume enters its baseline."
+            )
+
+        with st.expander("Intraday Calculation Ledger", expanded=False):
+            _icols = [
+                "AdjOpen","AdjHigh","AdjLow","AdjCloseCalc","Volume","IntradaySessionDate","IntradaySessionBar",
+                "SessionVWAP","VWAPGapPct","VWAPGapATR","OpeningRangeHigh","OpeningRangeLow","OpeningRangeFinalized",
+                "OpeningRangeBreakoutUp","OpeningRangeBreakoutDown","SlotExpectedVolume","SlotRelativeVolume","IntradayRVOLClimax",
+                "IntradayATR","IntradayRealizedVol","SessionGapPct","SessionReturnPct","SessionDrawdownPct",
+                "NWDirection","NWMomentumUpwardWarning","NWMomentumDownwardWarning","ResidualDriftZ",
+                "IntradayConfirmationScore","IntradayConfirmationState","TacticalTargetExposure","TacticalActualExposure",
+            ]
+            _icols = [c for c in _icols if c in intraday_result.columns]
+            st.dataframe(intraday_result[_icols].sort_index(ascending=False), width="stretch", height=620)
+            _icsv = intraday_result[_icols].reset_index().to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "Export 15m Intraday Tactical Ledger CSV", _icsv,
+                file_name=f"MK_15m_Intraday_Tactical_{ticker_used}_{APP_VERSION.replace('.','')}.csv", mime="text/csv"
+            )
 
 st.caption("MK FinTECH LabGEN @2026 ATELIER ISTANBUL  |  By Murat Konuklar")
