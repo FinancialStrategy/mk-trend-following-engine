@@ -111,3 +111,9 @@ jobs:
           python -m py_compile MK_Yahoo_Strict_Reconciliation_v0081.py
           python -m py_compile app.py
           python yahoo_strict_reconciliation_validation_v0081.py
+
+      - name: Yahoo session-aware strict validation v0.08.2
+        run: |
+          python -m py_compile MK_Yahoo_Session_Aware_Strict_v0082.py
+          python -m py_compile app.py
+          python yahoo_session_aware_validation_v0082.py
